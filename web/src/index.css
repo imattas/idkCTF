@@ -1,0 +1,128 @@
+@import "tailwindcss";
+
+:root {
+  color-scheme: dark;
+  --accent: #38bdf8;
+  --accent-ink: #020617;
+  --bg: #0a0e14;
+  --fg: #d7dce5;
+  --font: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --radius: 0.75rem;
+
+  /* Repoint Tailwind's entire `sky` scale at the accent so EVERY hardcoded
+     blue utility (text-sky-*, bg-sky-*, border-sky-*, focus:ring-sky-*) tracks
+     the active accent colour. Changing the accent recolours the whole app. */
+  --color-sky-300: color-mix(in srgb, var(--accent), white 35%);
+  --color-sky-400: color-mix(in srgb, var(--accent), white 12%);
+  --color-sky-500: var(--accent);
+  --color-sky-600: color-mix(in srgb, var(--accent), black 14%);
+  --color-sky-700: color-mix(in srgb, var(--accent), black 32%);
+}
+
+/* Theme presets — each sets background, text, default accent, font + flair.
+   The accent can be overridden live (inline style on <html>). */
+[data-theme="midnight"] { --bg: #0a0e14; --fg: #d7dce5; --accent: #38bdf8; }
+[data-theme="hacker"]   { --bg: #050a07; --fg: #cdfad4; --accent: #22c55e;
+  --font: ui-monospace, "JetBrains Mono", "Fira Code", monospace; }
+[data-theme="synthwave"]{ --bg: #190a2b; --fg: #f0d9ff; --accent: #e879f9; --radius: 1rem;
+  --bg-image: linear-gradient(135deg, #2a0a45, #160a2e, #0a0a2e, #2a0a45); }
+[data-theme="crimson"]  { --bg: #140a0a; --fg: #fecaca; --accent: #f43f5e;
+  --bg-image: radial-gradient(1200px 600px at 50% -10%, #3a0a0a, transparent); }
+[data-theme="ocean"]    { --bg: #04141f; --fg: #cce9f5; --accent: #06b6d4; --radius: 1rem;
+  --bg-image: linear-gradient(135deg, #04141f, #053040, #04141f); }
+[data-theme="light"]    { color-scheme: light; --bg: #eef2f7; --fg: #0f172a; --accent: #0284c7; --accent-ink: #ffffff; }
+
+body {
+  margin: 0;
+  color: var(--fg);
+  font-family: var(--font);
+  background-color: var(--bg);
+  background-image: var(--bg-image, none);
+  background-size: 300% 300%;
+  background-attachment: fixed;
+  animation: bgShift 24s ease infinite;
+}
+
+/* Light theme: lighten cards/borders so the dark utility classes still read */
+[data-theme="light"] .card { background: rgba(255,255,255,0.7); border-color: #cbd5e1; }
+[data-theme="light"] .input { background: #fff; border-color: #cbd5e1; color: #0f172a; }
+
+/* Animated gradient drift (only visible on themes with --bg-image) */
+@keyframes bgShift { 0%{background-position:0% 50%} 50%{background-position:100% 50%} 100%{background-position:0% 50%} }
+/* Page entrance */
+@keyframes fadeUp { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+main { animation: fadeUp 0.4s ease both; }
+/* Hacker theme: CRT scanlines */
+[data-theme="hacker"] body::after {
+  content: ""; position: fixed; inset: 0; z-index: -1; pointer-events: none;
+  background: repeating-linear-gradient(transparent 0 2px, rgba(34,197,94,0.05) 2px 4px);
+}
+
+.text-accent { color: var(--accent); }
+
+/* Cards: theme radius + hover lift */
+.card { border-radius: var(--radius); transition: transform 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease; }
+
+/* Lightweight prose styling for rendered markdown / custom pages */
+.prose-ctf { line-height: 1.7; color: var(--fg); }
+.prose-ctf h1 { font-size: 1.8rem; font-weight: 700; margin: 1rem 0 0.5rem; color: #fff; }
+.prose-ctf h2 { font-size: 1.4rem; font-weight: 700; margin: 1rem 0 0.5rem; color: #fff; }
+.prose-ctf h3 { font-size: 1.15rem; font-weight: 600; margin: 0.75rem 0 0.5rem; color: #fff; }
+.prose-ctf p { margin: 0.6rem 0; }
+.prose-ctf a { color: var(--accent); text-decoration: underline; }
+.prose-ctf ul { list-style: disc; padding-left: 1.4rem; margin: 0.6rem 0; }
+.prose-ctf ol { list-style: decimal; padding-left: 1.4rem; margin: 0.6rem 0; }
+.prose-ctf code { font-family: ui-monospace, monospace; background: rgba(148,163,184,0.15); padding: 0.1em 0.35em; border-radius: 4px; font-size: 0.9em; }
+.prose-ctf pre { background: rgba(0,0,0,0.4); padding: 1rem; border-radius: 8px; overflow-x: auto; margin: 0.8rem 0; }
+.prose-ctf pre code { background: none; padding: 0; }
+.prose-ctf blockquote { border-left: 3px solid var(--accent); padding-left: 1rem; color: #94a3b8; margin: 0.8rem 0; }
+.prose-ctf img { max-width: 100%; border-radius: 8px; }
+.prose-ctf table { border-collapse: collapse; margin: 0.8rem 0; }
+.prose-ctf th, .prose-ctf td { border: 1px solid #334155; padding: 0.4rem 0.7rem; }
+
+/* Subtle grid backdrop, tinted by the accent colour */
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  background-image:
+    linear-gradient(color-mix(in srgb, var(--accent) 7%, transparent) 1px, transparent 1px),
+    linear-gradient(90deg, color-mix(in srgb, var(--accent) 7%, transparent) 1px, transparent 1px);
+  background-size: 32px 32px;
+}
+
+.mono {
+  font-family: ui-monospace, "JetBrains Mono", "Fira Code", "Cascadia Code", monospace;
+}
+
+/* Reusable component classes (self-contained — Tailwind v4 @apply only takes utilities) */
+@layer components {
+  .btn {
+    @apply inline-flex items-center justify-center gap-2 rounded-md px-4 py-2 text-sm font-medium transition disabled:opacity-50 disabled:cursor-not-allowed;
+  }
+  .btn-primary {
+    @apply inline-flex items-center justify-center gap-2 rounded-md px-4 py-2 text-sm font-medium transition disabled:opacity-50 disabled:cursor-not-allowed;
+    background: var(--accent);
+    color: var(--accent-ink);
+  }
+  .btn-primary:hover { filter: brightness(1.1); box-shadow: 0 6px 22px -6px var(--accent); }
+  .btn-ghost {
+    @apply inline-flex items-center justify-center gap-2 rounded-md px-4 py-2 text-sm font-medium transition disabled:opacity-50 disabled:cursor-not-allowed border border-slate-700 text-slate-200 hover:bg-slate-800;
+  }
+  .btn-danger {
+    @apply inline-flex items-center justify-center gap-2 rounded-md px-4 py-2 text-sm font-medium transition disabled:opacity-50 disabled:cursor-not-allowed bg-rose-600 text-white hover:bg-rose-500;
+  }
+  .input {
+    @apply w-full rounded-md border border-slate-700 bg-slate-900/70 px-3 py-2 text-sm text-slate-100 outline-none placeholder:text-slate-500 focus:border-sky-500 focus:ring-1 focus:ring-sky-500;
+  }
+  .label {
+    @apply mb-1 block text-xs font-medium uppercase tracking-wide text-slate-400;
+  }
+  .card {
+    @apply rounded-xl border border-slate-800 bg-slate-900/50 p-5;
+  }
+  .badge {
+    @apply inline-flex items-center rounded-full border border-slate-700 px-2 py-0.5 text-xs;
+  }
+}

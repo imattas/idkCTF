@@ -1,0 +1,43 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "cloudctf",
+  "main": "src/index.ts",
+  "compatibility_date": "2025-05-01",
+  "account_id": "947309b8559eadac8c20a351beedf8c6",
+  "assets": {
+    "directory": "./dist",
+    "binding": "ASSETS",
+    "not_found_handling": "single-page-application"
+  },
+  "observability": {
+    "enabled": true
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "cloudctf",
+      "database_id": "36ceb099-a660-4af5-b7b4-94deab814fe9",
+      "migrations_dir": "migrations"
+    }
+  ],
+  "kv_namespaces": [
+    {
+      "binding": "SESSIONS",
+      "id": "ef98c660e02943a0ad882c955af5ad10"
+    }
+  ],
+  // Cloudflare Email Sending binding. Sending requires an onboarded domain
+  // (`wrangler email sending enable <domain>`) + a from-address on that domain
+  // configured in Admin → Settings. The platform degrades gracefully if absent.
+  "send_email": [
+    {
+      "name": "EMAIL"
+    }
+  ]
+  // R2 (optional file storage) — uncomment if your account/token has R2 enabled.
+  // The Worker automatically falls back to storing challenge files inline in D1
+  // when this binding is absent, so the platform stays 100% on Cloudflare either way.
+  // ,"r2_buckets": [
+  //   { "binding": "FILES", "bucket_name": "cloudctf-files" }
+  // ]
+}
