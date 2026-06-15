@@ -4,7 +4,7 @@ import { requireAdmin } from "../middleware/auth";
 import { getConfig, setConfig } from "../lib/config";
 import { randomToken, hashPassword } from "../lib/auth";
 import { nowSeconds } from "../lib/validate";
-import { listPlugins, savePlugin, getPlugin, deliverDiscord, deliverGeneric } from "../lib/plugins";
+import { listPlugins, savePlugin, getPlugin, deliverDiscord } from "../lib/plugins";
 import { sendEmail } from "../lib/email";
 import { logEvent, EVENTS } from "../lib/events";
 
@@ -491,7 +491,6 @@ app.post("/plugins/:name/test", async (c) => {
   };
   try {
     if (name === "discord_webhook") await deliverDiscord(p.config, "solve", payload);
-    else if (name === "generic_webhook") await deliverGeneric(p.config, "test", payload);
     else return c.json({ error: "This plugin has no test action" }, 400);
     return c.json({ ok: true });
   } catch (e: any) {

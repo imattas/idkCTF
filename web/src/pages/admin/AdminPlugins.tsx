@@ -12,7 +12,6 @@ const ALL_EVENTS = ["solve", "first_blood", "flag.submit", "auth.register", "aut
 
 const META: Record<string, { title: string; blurb: string; kind: "webhook" | "feature" }> = {
   discord_webhook: { kind: "webhook", title: "Discord Webhook", blurb: "Announce solves, first bloods and more to a Discord channel via an incoming webhook URL." },
-  generic_webhook: { kind: "webhook", title: "Generic Webhook", blurb: "POST a JSON payload for each subscribed event to any URL (optionally HMAC-signed)." },
   challenge_reviews: { kind: "feature", title: "Challenge Reviews ★", blurb: "Let players rate (1–5★) and comment on challenges they've solved. Ratings show on each challenge." },
   writeups: { kind: "feature", title: "Writeups", blurb: "Let players who solved a challenge submit a writeup link, visible to everyone who has also solved it." },
 };
@@ -93,14 +92,11 @@ function PluginCard({ plugin, onSaved }: { plugin: Plugin; onSaved: () => void }
                 </div>
               </div>
               <div>
-                <label className="label">Custom message template (optional)</label>
+                <label className="label">Default message template (optional)</label>
                 <textarea className="input mono" rows={2} value={cfg.template || ""} onChange={(e) => setCfg({ ...cfg, template: e.target.value })} placeholder="🚩 {user} solved {challenge}!" />
-                <p className="mt-1 text-xs text-slate-500">Variables: <code className="mono">{"{user} {challenge} {team} {event} {message} {ip} {time}"}</code>. Leave blank for the default text.</p>
+                <p className="mt-1 text-xs text-slate-500">Variables: <code className="mono">{"{user} {challenge} {team} {event} {message} {ip} {time}"}</code>. Used for any event without its own template below.</p>
               </div>
             </>
-          )}
-          {plugin.name === "generic_webhook" && (
-            <div><label className="label">HMAC secret (optional)</label><input className="input mono" value={cfg.secret || ""} onChange={(e) => setCfg({ ...cfg, secret: e.target.value })} placeholder="signs X-CloudCTF-Signature" /></div>
           )}
 
           <div>
@@ -113,6 +109,25 @@ function PluginCard({ plugin, onSaved }: { plugin: Plugin; onSaved: () => void }
               ))}
             </div>
           </div>
+
+          {plugin.name === "discord_webhook" && (cfg.events || []).length > 0 && (
+            <div>
+              <label className="label">Per-event messages (optional — overrides the default template)</label>
+              <div className="space-y-2">
+                {(cfg.events || []).map((ev: string) => (
+                  <div key={ev} className="flex items-center gap-2">
+                    <span className="w-32 shrink-0 text-xs text-slate-400">{ev}</span>
+                    <input
+                      className="input mono text-xs"
+                      value={(cfg.templates || {})[ev] || ""}
+                      onChange={(e) => setCfg({ ...cfg, templates: { ...(cfg.templates || {}), [ev]: e.target.value } })}
+                      placeholder={`message for ${ev} — leave blank for default`}
+                    />
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
         </>
       )}
 

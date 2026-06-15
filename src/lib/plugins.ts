@@ -77,7 +77,6 @@ export function renderTemplate(tpl: string, p: any): string {
 async function deliver(plugin: PluginRow, type: string, payload: any): Promise<void> {
   switch (plugin.name) {
     case "discord_webhook": return deliverDiscord(plugin.config, type, payload);
-    case "generic_webhook": return deliverGeneric(plugin.config, type, payload);
   }
 }
 
@@ -103,7 +102,10 @@ function describe(type: string, p: any): string {
 
 export async function deliverDiscord(cfg: any, type: string, p: any): Promise<void> {
   if (!cfg.url) return;
-  const text = cfg.template ? renderTemplate(cfg.template, p) : describe(type, p);
+  // Per-event template overrides the global default template, which overrides
+  // the built-in description.
+  const tpl = (cfg.templates && cfg.templates[type]) || cfg.template;
+  const text = tpl ? renderTemplate(tpl, p) : describe(type, p);
   const format = cfg.format || "embed"; // 'embed' | 'message' | 'both'
   const mention = cfg.mention ? `${cfg.mention} ` : "";
 
@@ -125,18 +127,3 @@ export async function deliverDiscord(cfg: any, type: string, p: any): Promise<vo
   });
 }
 
-export async function deliverGeneric(cfg: any, type: string, p: any): Promise<void> {
-  if (!cfg.url) return;
-  const bodyStr = JSON.stringify({ event: type, ...p });
-  const headers: Record<string, string> = { "Content-Type": "application/json" };
-  if (cfg.secret) headers["X-CloudCTF-Signature"] = await hmac(cfg.secret, bodyStr);
-  await fetch(cfg.url, { method: "POST", headers, body: bodyStr });
-}
-
-async function hmac(secret: string, message: string): Promise<string> {
-  const key = await crypto.subtle.importKey(
-    "raw", new TextEncoder().encode(secret), { name: "HMAC", hash: "SHA-256" }, false, ["sign"]
-  );
-  const sig = await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(message));
-  return [...new Uint8Array(sig)].map((b) => b.toString(16).padStart(2, "0")).join("");
-}
