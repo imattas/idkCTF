@@ -55,6 +55,7 @@ api.get("/bootstrap", async (c) => {
       home_format: cfg.home_format,
       custom_head: cfg.custom_head,
       has_logo: !!logo,
+      require_access_code: cfg.require_access_code,
     },
     features: { reviews: featNames.has("challenge_reviews"), writeups: featNames.has("writeups") },
     competition_state: competitionState(cfg, nowSeconds()),

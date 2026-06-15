@@ -95,6 +95,16 @@ function UserModal({ id, self, onClose, onSaved }: { id: number; self: boolean; 
   };
   const kickTeam = async () => { await api.patch(`/admin/users/${id}`, { team_id: null, is_captain: 0 }); detail.refetch(); onSaved(); };
   const removeSolve = async (sid: number) => { await api.del(`/admin/solves/${sid}`); detail.refetch(); };
+  const banIp = async () => {
+    if (!detail.data?.last_ip) return;
+    if (!confirm(`Ban IP ${detail.data.last_ip}? They won't be able to sign up or log in from it.`)) return;
+    await api.post("/admin/bans", { type: "ip", value: detail.data.last_ip, reason: `via user ${form.name}` });
+    setMsg("IP banned.");
+  };
+  const flagReview = async () => {
+    await api.post("/admin/review-flags", { user_id: id, team_id: form.team_id || null, detail: "Manually flagged by admin" });
+    setMsg("Flagged for review.");
+  };
   const addSolve = async () => { if (!grant) return; await api.post(`/admin/users/${id}/grant-solve`, { challenge_id: Number(grant) }); setGrant(""); detail.refetch(); };
 
   const solvedIds = new Set((detail.data?.solves || []).map((s: any) => s.challenge_id));
@@ -145,7 +155,13 @@ function UserModal({ id, self, onClose, onSaved }: { id: number; self: boolean; 
           </div>
         </div>
 
-        <button className="btn-primary" onClick={save}>Save changes</button>
+        <div className="flex flex-wrap items-center gap-3">
+          <button className="btn-primary" onClick={save}>Save changes</button>
+          {detail.data?.last_ip && (
+            <button className="btn-ghost text-xs" onClick={banIp}>Ban IP ({detail.data.last_ip})</button>
+          )}
+          <button className="btn-ghost text-xs" onClick={flagReview}>Flag for review</button>
+        </div>
 
         <div className="border-t border-slate-800 pt-4">
           <h4 className="mb-2 font-semibold text-white">Solves ({detail.data?.solves?.length || 0})</h4>

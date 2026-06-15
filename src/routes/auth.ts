@@ -5,8 +5,9 @@ import { hashPassword, verifyPassword, randomToken, sha256hex } from "../lib/aut
 import { createSession, destroySession, sessionCookie, clearCookie, readCookie } from "../lib/session";
 import { requireAuth } from "../middleware/auth";
 import { nowSeconds } from "../lib/validate";
-import { logEvent, EVENTS } from "../lib/events";
+import { logEvent, EVENTS, extractMeta } from "../lib/events";
 import { sendEmail, welcomeEmail } from "../lib/email";
+import { isIpBanned, isUsernameBanned } from "../lib/bans";
 
 const app = new Hono<{ Bindings: Env; Variables: Variables }>();
 
@@ -30,6 +31,17 @@ app.post("/register", async (c) => {
     .first();
   if (exists) return c.json({ error: "A user with that name or email already exists" }, 409);
 
+  // Registration gates: IP ban, VPN, username ban, access code.
+  const ip = c.req.header("CF-Connecting-IP") || null;
+  if (await isIpBanned(c.env, ip)) return c.json({ error: "Registration is not allowed from your network." }, 403);
+  if (cfg.block_vpn_signup && extractMeta(c).is_vpn)
+    return c.json({ error: "Registrations from VPN/proxy networks are not allowed." }, 403);
+  if (await isUsernameBanned(c.env, name)) return c.json({ error: "That username isn't allowed. Please choose another." }, 403);
+  if (cfg.require_access_code) {
+    const code = String(body.access_code || "");
+    if (!cfg.access_code || code !== cfg.access_code) return c.json({ error: "Invalid or missing access code." }, 403);
+  }
+
   const canEmail = cfg.email_enabled && !!c.env.EMAIL && !!cfg.email_from;
 
   const hash = await hashPassword(password);
@@ -52,6 +64,8 @@ app.post("/register", async (c) => {
 });
 
 app.post("/login", async (c) => {
+  if (await isIpBanned(c.env, c.req.header("CF-Connecting-IP") || null))
+    return c.json({ error: "Access from your network is blocked." }, 403);
   const body = await c.req.json().catch(() => ({}));
   const ident = String(body.email || body.name || "").trim().toLowerCase();
   const password = String(body.password || "");

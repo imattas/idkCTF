@@ -4,9 +4,10 @@ import { requireAdmin } from "../middleware/auth";
 import { getConfig, setConfig } from "../lib/config";
 import { randomToken, hashPassword } from "../lib/auth";
 import { nowSeconds } from "../lib/validate";
-import { listPlugins, savePlugin, getPlugin, deliverDiscord } from "../lib/plugins";
+import { listPlugins, savePlugin, getPlugin, deliverDiscord, listWebhooks, getWebhook, createWebhook, updateWebhook, deleteWebhook } from "../lib/plugins";
 import { sendEmail } from "../lib/email";
 import { logEvent, EVENTS } from "../lib/events";
+import { listBans, addBan, removeBan } from "../lib/bans";
 
 const app = new Hono<{ Bindings: Env; Variables: Variables }>();
 app.use("*", requireAdmin);
@@ -35,7 +36,8 @@ app.patch("/config", async (c) => {
   const allowed = [
     "ctf_name", "ctf_description", "mode", "team_size_limit", "registration_open",
     "visibility", "scoreboard_visible", "freeze_time", "start_time", "end_time",
-    "paused", "block_vpn", "allow_name_change", "log_challenge_views",
+    "paused", "block_vpn", "block_vpn_signup", "allow_name_change", "log_challenge_views",
+    "require_access_code", "access_code", "auto_review", "review_fast_solve_seconds",
     "theme", "accent", "custom_css", "footer_html", "home_content", "home_format", "custom_head",
     "email_enabled", "email_from", "email_from_name", "email_on_register",
   ];
@@ -304,7 +306,8 @@ app.get("/users/:id", async (c) => {
      FROM solves s JOIN challenges ch ON ch.id = s.challenge_id WHERE s.user_id = ? ORDER BY s.created_at DESC`
   ).bind(id).all();
   const awards = await c.env.DB.prepare("SELECT id, name, value, created_at FROM awards WHERE user_id = ? ORDER BY id DESC").bind(id).all();
-  return c.json({ user, solves: solves.results, awards: awards.results });
+  const lastIp = await c.env.DB.prepare("SELECT ip FROM events WHERE user_id = ? AND ip IS NOT NULL ORDER BY id DESC LIMIT 1").bind(id).first<{ ip: string }>();
+  return c.json({ user, solves: solves.results, awards: awards.results, last_ip: lastIp?.ip ?? null });
 });
 
 // Grant a solve to a user (and their team, if any).
@@ -496,6 +499,95 @@ app.post("/plugins/:name/test", async (c) => {
   } catch (e: any) {
     return c.json({ error: e?.message || "Delivery failed" }, 502);
   }
+});
+
+/* ---------------- Webhooks (multiple Discord targets) ---------------- */
+
+app.get("/webhooks", async (c) => c.json({ webhooks: await listWebhooks(c.env) }));
+
+app.post("/webhooks", async (c) => {
+  const b = await c.req.json().catch(() => ({}));
+  const id = await createWebhook(c.env, String(b.name || "New webhook"));
+  return c.json({ ok: true, id });
+});
+
+app.put("/webhooks/:id", async (c) => {
+  const id = Number(c.req.param("id"));
+  const b = await c.req.json().catch(() => ({}));
+  await updateWebhook(c.env, id, String(b.name || "Webhook"), !!b.enabled, b.config ?? {});
+  return c.json({ ok: true });
+});
+
+app.delete("/webhooks/:id", async (c) => {
+  await deleteWebhook(c.env, Number(c.req.param("id")));
+  return c.json({ ok: true });
+});
+
+app.post("/webhooks/:id/test", async (c) => {
+  const w = await getWebhook(c.env, Number(c.req.param("id")));
+  if (!w) return c.json({ error: "Not found" }, 404);
+  const base = {
+    actor: { id: c.var.user!.id, name: c.var.user!.name },
+    challenge_id: null, challenge_name: "Test Challenge", team_id: null, team_name: "Test Team",
+    metadata: {}, ip: "203.0.113.1", is_vpn: false, at: nowSeconds(),
+  };
+  // Fire one test per subscribed event so each event's template/format is exercised.
+  const events: string[] = Array.isArray(w.config.events) && w.config.events.length ? w.config.events : ["solve"];
+  try {
+    for (const ev of events) {
+      await deliverDiscord(w.config, ev, { ...base, type: ev, message: `Test of "${ev}" event` });
+    }
+    return c.json({ ok: true, sent: events.length });
+  } catch (e: any) {
+    return c.json({ error: e?.message || "Delivery failed" }, 502);
+  }
+});
+
+/* ---------------- Bans (IP / username) ---------------- */
+
+app.get("/bans", async (c) => c.json({ bans: await listBans(c.env) }));
+
+app.post("/bans", async (c) => {
+  const b = await c.req.json().catch(() => ({}));
+  if (!b.value) return c.json({ error: "value required" }, 400);
+  const id = await addBan(c.env, b.type, String(b.value), b.match, b.reason || null);
+  await logEvent(c, EVENTS.ADMIN_ACTION, { message: `Added ${b.type} ban: ${b.value}` });
+  return c.json({ ok: true, id });
+});
+
+app.delete("/bans/:id", async (c) => {
+  await removeBan(c.env, Number(c.req.param("id")));
+  return c.json({ ok: true });
+});
+
+/* ---------------- Review flags (suspicious activity) ---------------- */
+
+app.get("/review-flags", async (c) => {
+  const showAll = c.req.query("all") === "1";
+  const rows = await c.env.DB.prepare(
+    `SELECT rf.*, u.name AS user_name, t.name AS team_name, ch.name AS challenge_name
+     FROM review_flags rf
+     LEFT JOIN users u ON u.id = rf.user_id
+     LEFT JOIN teams t ON t.id = rf.team_id
+     LEFT JOIN challenges ch ON ch.id = rf.challenge_id
+     ${showAll ? "" : "WHERE rf.resolved = 0"} ORDER BY rf.id DESC LIMIT 300`
+  ).all();
+  return c.json({ flags: rows.results });
+});
+
+app.post("/review-flags/:id/resolve", async (c) => {
+  const id = Number(c.req.param("id"));
+  await c.env.DB.prepare("UPDATE review_flags SET resolved = 1 WHERE id = ?").bind(id).run();
+  return c.json({ ok: true });
+});
+
+app.post("/review-flags", async (c) => {
+  const b = await c.req.json().catch(() => ({}));
+  if (!b.user_id) return c.json({ error: "user_id required" }, 400);
+  await c.env.DB.prepare(
+    "INSERT OR IGNORE INTO review_flags (user_id, team_id, challenge_id, type, detail, created_at) VALUES (?, ?, ?, 'manual', ?, ?)"
+  ).bind(Number(b.user_id), b.team_id ?? null, b.challenge_id ?? null, String(b.detail || "Manually flagged"), nowSeconds()).run();
+  return c.json({ ok: true });
 });
 
 /* ---------------- Branding ---------------- */

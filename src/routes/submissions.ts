@@ -1,5 +1,5 @@
 import { Hono } from "hono";
-import type { Env, Variables } from "../types";
+import type { Env, Variables, AppContext, SessionUser } from "../types";
 import { getConfig, competitionState } from "../lib/config";
 import { requireAuth } from "../middleware/auth";
 import { checkFlag, nowSeconds } from "../lib/validate";
@@ -129,7 +129,39 @@ app.post("/:id", async (c) => {
   // Plugins subscribed to "solve" also receive first_blood (handled in dispatch).
   await logEvent(c, firstBlood ? EVENTS.FIRST_BLOOD : EVENTS.SOLVE, { challenge_id: challengeId });
 
+  if (cfg.auto_review) await autoReview(c, u, account!, col, challengeId, now, cfg.review_fast_solve_seconds);
+
   return c.json({ status: "correct", message: firstBlood ? "🩸 FIRST BLOOD! 🎉" : "Correct! 🎉", first_blood: firstBlood });
 });
+
+// Flag suspicious solves: solved without ever viewing, suspiciously fast after
+// first view, or several solves in rapid succession.
+async function autoReview(c: AppContext, u: SessionUser, account: number, col: string, challengeId: number, now: number, fastSeconds: number) {
+  const flag = async (type: string, detail: string) => {
+    try {
+      await c.env.DB.prepare(
+        "INSERT OR IGNORE INTO review_flags (user_id, team_id, challenge_id, type, detail, created_at) VALUES (?, ?, ?, ?, ?, ?)"
+      ).bind(u.id, u.team_id, challengeId, type, detail, now).run();
+      await logEvent(c, EVENTS.REVIEW_FLAG, { challenge_id: challengeId, message: `${type}: ${detail}` });
+    } catch {}
+  };
+
+  const view = await c.env.DB.prepare(
+    `SELECT MIN(created_at) AS t FROM events WHERE type = 'challenge.view' AND challenge_id = ? AND ${col} = ?`
+  ).bind(challengeId, account).first<{ t: number | null }>();
+
+  if (!view?.t) {
+    await flag("no_view", "Solved without ever opening the challenge");
+  } else if (now - view.t < fastSeconds) {
+    await flag("fast_solve", `Solved ${now - view.t}s after first viewing (< ${fastSeconds}s)`);
+  }
+
+  const prev = await c.env.DB.prepare(
+    `SELECT created_at FROM solves WHERE ${col} = ? AND challenge_id != ? ORDER BY created_at DESC LIMIT 1`
+  ).bind(account, challengeId).first<{ created_at: number }>();
+  if (prev && now - prev.created_at < 15) {
+    await flag("rapid", `Two solves within ${now - prev.created_at}s`);
+  }
+}
 
 export default app;

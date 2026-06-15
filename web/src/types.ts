@@ -19,6 +19,7 @@ export interface PublicConfig {
   home_format: "markdown" | "html";
   custom_head: string;
   has_logo: boolean;
+  require_access_code: boolean;
 }
 
 export interface Bracket {

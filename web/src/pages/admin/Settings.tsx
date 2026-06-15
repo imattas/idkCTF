@@ -48,8 +48,13 @@ export default function Settings() {
       freeze_time: form.freeze_time || null,
       paused: !!form.paused,
       block_vpn: !!form.block_vpn,
+      block_vpn_signup: !!form.block_vpn_signup,
       allow_name_change: !!form.allow_name_change,
       log_challenge_views: !!form.log_challenge_views,
+      require_access_code: !!form.require_access_code,
+      access_code: form.access_code || "",
+      auto_review: !!form.auto_review,
+      review_fast_solve_seconds: Number(form.review_fast_solve_seconds) || 30,
       email_enabled: !!form.email_enabled,
       email_from: form.email_from || "",
       email_from_name: form.email_from_name || "",
@@ -124,6 +129,24 @@ export default function Settings() {
           <label className="flex items-center gap-2 text-sm text-slate-300">
             <input type="checkbox" checked={!!form.block_vpn} onChange={(e) => set("block_vpn", e.target.checked)} /> Block submissions from detected VPN/proxy networks
           </label>
+          <label className="flex items-center gap-2 text-sm text-slate-300">
+            <input type="checkbox" checked={!!form.block_vpn_signup} onChange={(e) => set("block_vpn_signup", e.target.checked)} /> Block sign-ups from detected VPN/proxy networks
+          </label>
+          <label className="flex items-center gap-2 text-sm text-slate-300">
+            <input type="checkbox" checked={!!form.auto_review} onChange={(e) => set("auto_review", e.target.checked)} /> Auto-flag suspicious solves for review
+          </label>
+          <label className="flex items-center gap-2 text-sm text-slate-300">
+            Flag solves faster than
+            <input type="number" className="input w-20" value={form.review_fast_solve_seconds ?? 30} onChange={(e) => set("review_fast_solve_seconds", e.target.value)} /> seconds after first view
+          </label>
+          <div className="border-t border-slate-800 pt-3">
+            <label className="flex items-center gap-2 text-sm text-slate-300">
+              <input type="checkbox" checked={!!form.require_access_code} onChange={(e) => set("require_access_code", e.target.checked)} /> Require an access code to register
+            </label>
+            {form.require_access_code && (
+              <div className="mt-2"><label className="label">Access code</label><input className="input mono max-w-xs" value={form.access_code || ""} onChange={(e) => set("access_code", e.target.value)} placeholder="share this with allowed players" /></div>
+            )}
+          </div>
           <label className="flex items-center gap-2 text-sm text-slate-300">
             <input type="checkbox" checked={!!form.allow_name_change} onChange={(e) => set("allow_name_change", e.target.checked)} /> Allow users to change their display name
           </label>

@@ -9,7 +9,7 @@ import { COUNTRIES } from "../countries";
 export default function Register() {
   const { refresh, config } = useStore();
   const navigate = useNavigate();
-  const [form, setForm] = useState({ name: "", email: "", password: "", affiliation: "", country: "", bracket_id: "" });
+  const [form, setForm] = useState({ name: "", email: "", password: "", affiliation: "", country: "", bracket_id: "", access_code: "" });
   const [err, setErr] = useState("");
   const [busy, setBusy] = useState(false);
 
@@ -50,6 +50,12 @@ export default function Register() {
           <label className="label">Password (min 8)</label>
           <input className="input" type="password" value={form.password} onChange={set("password")} required />
         </div>
+        {config.require_access_code && (
+          <div>
+            <label className="label">Access code *</label>
+            <input className="input mono" value={form.access_code} onChange={set("access_code")} placeholder="Required to register" required />
+          </div>
+        )}
         <div className="grid grid-cols-2 gap-4">
           <div>
             <label className="label">Affiliation</label>

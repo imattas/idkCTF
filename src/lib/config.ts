@@ -15,8 +15,13 @@ export interface SiteConfig {
   // Behaviour
   paused: boolean; // when true, submissions are blocked
   block_vpn: boolean; // reject submissions from detected VPN/proxy IPs
+  block_vpn_signup: boolean; // reject registrations from detected VPN/proxy IPs
   allow_name_change: boolean;
   log_challenge_views: boolean;
+  require_access_code: boolean; // require a code to register
+  access_code: string;
+  auto_review: boolean; // auto-flag suspicious solves for review
+  review_fast_solve_seconds: number; // flag solves faster than this after first view
   // Appearance
   theme: string; // preset id
   accent: string; // hex accent colour
@@ -46,8 +51,13 @@ const DEFAULTS: SiteConfig = {
   end_time: null,
   paused: false,
   block_vpn: false,
+  block_vpn_signup: false,
   allow_name_change: true,
   log_challenge_views: true,
+  require_access_code: false,
+  access_code: "",
+  auto_review: true,
+  review_fast_solve_seconds: 30,
   theme: "midnight",
   accent: "#38bdf8",
   custom_css: "",

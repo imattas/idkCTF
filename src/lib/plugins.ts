@@ -35,16 +35,54 @@ function safeParse(s: string): Record<string, any> {
   try { return JSON.parse(s || "{}"); } catch { return {}; }
 }
 
-// Fan an event out to every enabled plugin that subscribes to it.
+/* ---------------- Webhooks (multiple Discord targets) ---------------- */
+
+export interface WebhookRow {
+  id: number;
+  name: string;
+  enabled: number;
+  config: Record<string, any>;
+  created_at: number;
+}
+
+export async function listWebhooks(env: Env): Promise<WebhookRow[]> {
+  const rows = await env.DB.prepare("SELECT id, name, enabled, config, created_at FROM webhooks ORDER BY id").all<any>();
+  return rows.results.map((r) => ({ ...r, config: safeParse(r.config) }));
+}
+
+export async function getWebhook(env: Env, id: number): Promise<WebhookRow | null> {
+  const r = await env.DB.prepare("SELECT id, name, enabled, config, created_at FROM webhooks WHERE id = ?").bind(id).first<any>();
+  return r ? { ...r, config: safeParse(r.config) } : null;
+}
+
+export async function createWebhook(env: Env, name: string): Promise<number> {
+  const res = await env.DB.prepare("INSERT INTO webhooks (name, enabled, config, created_at) VALUES (?, 0, '{\"events\":[\"solve\",\"first_blood\"]}', ?)")
+    .bind(name || "New webhook", Math.floor(Date.now() / 1000))
+    .run();
+  return res.meta.last_row_id as number;
+}
+
+export async function updateWebhook(env: Env, id: number, name: string, enabled: boolean, config: any): Promise<void> {
+  await env.DB.prepare("UPDATE webhooks SET name = ?, enabled = ?, config = ? WHERE id = ?")
+    .bind(name, enabled ? 1 : 0, JSON.stringify(config ?? {}), id)
+    .run();
+}
+
+export async function deleteWebhook(env: Env, id: number): Promise<void> {
+  await env.DB.prepare("DELETE FROM webhooks WHERE id = ?").bind(id).run();
+}
+
+// Fan an event out to every enabled webhook subscribed to it.
 export async function dispatchToPlugins(env: Env, type: string, payload: any): Promise<void> {
-  const plugins = await listPlugins(env);
+  const webhooks = await listWebhooks(env);
+  if (!webhooks.some((w) => w.enabled)) return;
   const enriched = await enrich(env, payload);
   // A first_blood also satisfies subscribers to "solve".
   const effective = type === "first_blood" ? ["first_blood", "solve"] : [type];
   await Promise.all(
-    plugins
-      .filter((p) => p.enabled && Array.isArray(p.config.events) && effective.some((t) => p.config.events.includes(t)))
-      .map((p) => deliver(p, type, enriched).catch((e) => console.error(`plugin ${p.name} failed`, e)))
+    webhooks
+      .filter((w) => w.enabled && Array.isArray(w.config.events) && effective.some((t) => w.config.events.includes(t)))
+      .map((w) => deliverDiscord(w.config, type, enriched).catch((e) => console.error(`webhook ${w.id} failed`, e)))
   );
 }
 
@@ -74,11 +112,6 @@ export function renderTemplate(tpl: string, p: any): string {
     .replaceAll("{time}", new Date((p.at ?? 0) * 1000).toISOString());
 }
 
-async function deliver(plugin: PluginRow, type: string, payload: any): Promise<void> {
-  switch (plugin.name) {
-    case "discord_webhook": return deliverDiscord(plugin.config, type, payload);
-  }
-}
 
 const COLORS: Record<string, number> = {
   first_blood: 0xef4444,

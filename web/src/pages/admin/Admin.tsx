@@ -5,6 +5,8 @@ import AdminUsers from "./AdminUsers";
 import AdminTeams from "./AdminTeams";
 import AdminSubmissions from "./AdminSubmissions";
 import AdminLogs from "./AdminLogs";
+import AdminReview from "./AdminReview";
+import AdminBans from "./AdminBans";
 import AdminPlugins from "./AdminPlugins";
 import AdminAppearance from "./AdminAppearance";
 import AdminPages from "./AdminPages";
@@ -36,6 +38,8 @@ export default function Admin() {
         {item("/admin/users", "Users")}
         {item("/admin/teams", "Teams")}
         {item("/admin/submissions", "Submissions")}
+        {item("/admin/review", "Review")}
+        {item("/admin/bans", "Bans")}
         {item("/admin/logs", "Logs")}
         {item("/admin/pages", "Pages")}
         {item("/admin/brackets", "Brackets")}
@@ -50,6 +54,8 @@ export default function Admin() {
           <Route path="users" element={<AdminUsers />} />
           <Route path="teams" element={<AdminTeams />} />
           <Route path="submissions" element={<AdminSubmissions />} />
+          <Route path="review" element={<AdminReview />} />
+          <Route path="bans" element={<AdminBans />} />
           <Route path="logs" element={<AdminLogs />} />
           <Route path="pages" element={<AdminPages />} />
           <Route path="brackets" element={<AdminBrackets />} />
