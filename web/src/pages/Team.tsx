@@ -27,6 +27,7 @@ export default function Team() {
 
   const create = async () => {
     setErr("");
+    if (teamBrackets.length > 1 && !bracketId) { setErr("Please choose which division your team belongs to"); return; }
     try {
       await api.post("/teams/create", { name: createName, bracket_id: bracketId ? Number(bracketId) : null });
       await refresh();
@@ -73,7 +74,7 @@ export default function Team() {
           <input className="input" placeholder="Team name" value={createName} onChange={(e) => setCreateName(e.target.value)} />
           {teamBrackets.length > 0 && (
             <select className="input" value={bracketId} onChange={(e) => setBracketId(e.target.value)}>
-              <option value="">— division: none —</option>
+              <option value="">{teamBrackets.length > 1 ? "— select your division —" : "— division: none —"}</option>
               {teamBrackets.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
             </select>
           )}

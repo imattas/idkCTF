@@ -65,9 +65,9 @@ export default function Register() {
         </div>
         {config.mode === "users" && userBrackets.length > 0 && (
           <div>
-            <label className="label">Division</label>
-            <select className="input" value={form.bracket_id} onChange={set("bracket_id")}>
-              <option value="">— none —</option>
+            <label className="label">Which division / scoreboard do you belong to?{userBrackets.length > 1 ? " *" : ""}</label>
+            <select className="input" value={form.bracket_id} onChange={set("bracket_id")} required={userBrackets.length > 1}>
+              <option value="">{userBrackets.length > 1 ? "— select your division —" : "— none —"}</option>
               {userBrackets.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
             </select>
           </div>
