@@ -27,7 +27,7 @@ app.get("/", async (c) => {
     if (idx >= 0) { rank = idx + 1; score = standings[idx].score; solves = standings[idx].solve_count; }
   }
   return c.json({
-    user: { id: u.id, name: u.name, email: u.email, role: u.role, team_id: u.team_id, verified: u.verified },
+    user: { id: u.id, name: u.name, email: u.email, role: u.role, team_id: u.team_id },
     mode: a.mode, score, rank, solves,
   });
 });

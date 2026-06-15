@@ -63,6 +63,12 @@ main { animation: fadeUp 0.4s ease both; }
 /* Cards: theme radius + hover lift */
 .card { border-radius: var(--radius); transition: transform 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease; }
 
+/* Flag submission feedback animations */
+@keyframes shake { 0%,100%{transform:translateX(0)} 15%{transform:translateX(-7px)} 30%{transform:translateX(7px)} 45%{transform:translateX(-5px)} 60%{transform:translateX(5px)} 75%{transform:translateX(-3px)} }
+@keyframes pop { 0%{transform:scale(.92);opacity:0} 55%{transform:scale(1.04)} 100%{transform:scale(1);opacity:1} }
+.feedback-correct { animation: pop 0.4s ease both; }
+.feedback-wrong { animation: shake 0.45s ease both; }
+
 /* Lightweight prose styling for rendered markdown / custom pages */
 .prose-ctf { line-height: 1.7; color: var(--fg); }
 .prose-ctf h1 { font-size: 1.8rem; font-weight: 700; margin: 1rem 0 0.5rem; color: #fff; }

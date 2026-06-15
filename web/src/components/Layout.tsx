@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef } from "react";
 import { Outlet, NavLink, useNavigate, useLocation, Link } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { useStore } from "../store";
@@ -93,7 +93,6 @@ export default function Layout() {
           </div>
         </div>
       </header>
-      {config.require_email_verification && user && !user.verified && <VerifyBanner />}
       <main className="mx-auto max-w-7xl px-4 py-8">
         <Outlet />
       </main>
@@ -110,22 +109,6 @@ export default function Layout() {
         )}
         <div className="mt-4 text-center text-xs text-slate-600">{config.ctf_name} · powered by CloudCTF on Cloudflare</div>
       </footer>
-    </div>
-  );
-}
-
-function VerifyBanner() {
-  const [msg, setMsg] = useState("");
-  const resend = async () => {
-    setMsg("Sending…");
-    try { await api.post("/auth/resend-verification"); setMsg("Verification email sent — check your inbox."); }
-    catch (e: any) { setMsg(e?.message || "Could not send"); }
-  };
-  return (
-    <div className="border-b border-amber-800 bg-amber-950/40 px-4 py-2 text-center text-sm text-amber-300">
-      ⚠ Please verify your email to submit flags.{" "}
-      <button onClick={resend} className="underline hover:text-amber-200">Resend email</button>
-      {msg && <span className="ml-2 text-amber-400">{msg}</span>}
     </div>
   );
 }

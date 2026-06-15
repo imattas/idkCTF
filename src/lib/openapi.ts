@@ -27,7 +27,7 @@ export function buildOpenApi(origin: string, ctfName: string) {
           security: bearer,
           parameters: [{ name: "id", in: "path", required: true, schema: { type: "integer" } }],
           requestBody: { required: true, content: { "application/json": { schema: { type: "object", required: ["flag"], properties: { flag: { type: "string" } } } } } },
-          responses: { "200": { description: "Submission result (status: correct|incorrect|already_solved|...)" }, "403": { description: "Closed/locked/unverified" }, "429": { description: "Rate limited" } },
+          responses: { "200": { description: "Submission result (status: correct|incorrect|already_solved|...)" }, "403": { description: "Closed/locked" }, "429": { description: "Rate limited" } },
         },
       },
       "/me": { get: { summary: "Your profile, score and rank", security: bearer, responses: { "200": { description: "OK" } } } },

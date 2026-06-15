@@ -54,7 +54,6 @@ export default function Settings() {
       email_from: form.email_from || "",
       email_from_name: form.email_from_name || "",
       email_on_register: !!form.email_on_register,
-      require_email_verification: !!form.require_email_verification,
     });
     await refresh();
     setMsg("Settings saved.");
@@ -144,9 +143,6 @@ export default function Settings() {
           </div>
           <label className="flex items-center gap-2 text-sm text-slate-300">
             <input type="checkbox" checked={!!form.email_on_register} onChange={(e) => set("email_on_register", e.target.checked)} /> Send a welcome email on registration
-          </label>
-          <label className="flex items-center gap-2 text-sm text-slate-300">
-            <input type="checkbox" checked={!!form.require_email_verification} onChange={(e) => set("require_email_verification", e.target.checked)} /> Require email verification before submitting flags
           </label>
           <div className="flex items-center gap-3">
             <button className="btn-ghost" type="button" onClick={sendTest}>Send test email to myself</button>

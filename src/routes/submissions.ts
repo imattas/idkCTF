@@ -20,8 +20,6 @@ app.post("/:id", async (c) => {
   if (state === "before") return c.json({ status: "closed", message: "Competition has not started" }, 403);
   if (state === "ended") return c.json({ status: "closed", message: "Competition is over" }, 403);
   if (cfg.paused) return c.json({ status: "closed", message: "Submissions are paused" }, 403);
-  if (cfg.require_email_verification && !u.verified)
-    return c.json({ status: "unverified", message: "Verify your email before submitting flags" }, 403);
 
   // Optional VPN/proxy blocking.
   if (cfg.block_vpn) {

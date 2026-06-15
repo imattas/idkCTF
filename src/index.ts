@@ -55,13 +55,12 @@ api.get("/bootstrap", async (c) => {
       home_format: cfg.home_format,
       custom_head: cfg.custom_head,
       has_logo: !!logo,
-      require_email_verification: cfg.require_email_verification,
     },
     features: { reviews: featNames.has("challenge_reviews"), writeups: featNames.has("writeups") },
     competition_state: competitionState(cfg, nowSeconds()),
     server_time: nowSeconds(),
     user: u
-      ? { id: u.id, name: u.name, email: u.email, role: u.role, team_id: u.team_id, is_captain: u.is_captain, verified: u.verified }
+      ? { id: u.id, name: u.name, email: u.email, role: u.role, team_id: u.team_id, is_captain: u.is_captain }
       : null,
   });
 });

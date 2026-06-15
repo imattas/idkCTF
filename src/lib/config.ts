@@ -30,7 +30,6 @@ export interface SiteConfig {
   email_from: string; // address on an onboarded domain
   email_from_name: string;
   email_on_register: boolean;
-  require_email_verification: boolean;
 }
 
 const DEFAULTS: SiteConfig = {
@@ -60,7 +59,6 @@ const DEFAULTS: SiteConfig = {
   email_from: "",
   email_from_name: "CloudCTF",
   email_on_register: false,
-  require_email_verification: false,
 };
 
 export async function getConfig(env: Env): Promise<SiteConfig> {

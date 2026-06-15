@@ -11,7 +11,6 @@ export default function Register() {
   const navigate = useNavigate();
   const [form, setForm] = useState({ name: "", email: "", password: "", affiliation: "", country: "", bracket_id: "" });
   const [err, setErr] = useState("");
-  const [notice, setNotice] = useState("");
   const [busy, setBusy] = useState(false);
 
   const { data: brk } = useQuery({ queryKey: ["brackets"], queryFn: () => api.get<{ brackets: Bracket[] }>("/brackets") });
@@ -24,9 +23,8 @@ export default function Register() {
     setErr("");
     setBusy(true);
     try {
-      const r = await api.post<{ verification_required?: boolean }>("/auth/register", { ...form, bracket_id: form.bracket_id ? Number(form.bracket_id) : null });
+      await api.post("/auth/register", { ...form, bracket_id: form.bracket_id ? Number(form.bracket_id) : null });
       await refresh();
-      if (r.verification_required) { setNotice("Account created! Check your email for a verification link to start submitting flags."); return; }
       navigate("/challenges");
     } catch (e) {
       setErr(e instanceof ApiError ? e.message : "Registration failed");
@@ -39,8 +37,7 @@ export default function Register() {
     <div className="mx-auto max-w-md">
       <h1 className="mb-6 text-2xl font-bold text-white">Register</h1>
       {err && <div className="mb-4 rounded-md border border-rose-700 bg-rose-950/50 p-3 text-sm text-rose-300">{err}</div>}
-      {notice && <div className="mb-4 rounded-md border border-emerald-700 bg-emerald-950/40 p-3 text-sm text-emerald-300">{notice}</div>}
-      {!notice && <form onSubmit={submit} className="card space-y-4">
+      <form onSubmit={submit} className="card space-y-4">
         <div>
           <label className="label">Username</label>
           <input className="input" value={form.name} onChange={set("name")} required />
@@ -76,7 +73,7 @@ export default function Register() {
           </div>
         )}
         <button className="btn-primary w-full" disabled={busy}>{busy ? "…" : "Create account"}</button>
-      </form>}
+      </form>
       <p className="mt-4 text-center text-sm text-slate-400">
         Already registered? <Link to="/login" className="text-sky-400 hover:underline">Log in</Link>
       </p>

@@ -19,7 +19,6 @@ export interface PublicConfig {
   home_format: "markdown" | "html";
   custom_head: string;
   has_logo: boolean;
-  require_email_verification: boolean;
 }
 
 export interface Bracket {
@@ -52,7 +51,6 @@ export interface CurrentUser {
   role: "user" | "admin";
   team_id: number | null;
   is_captain: number;
-  verified: number;
 }
 
 export interface Bootstrap {
@@ -73,6 +71,7 @@ export interface ChallengeSummary {
   solves: number;
   solved: boolean;
   locked: boolean;
+  tags: string[];
 }
 
 export interface Review {

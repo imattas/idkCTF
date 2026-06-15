@@ -6,7 +6,7 @@ import { createSession, destroySession, sessionCookie, clearCookie, readCookie }
 import { requireAuth } from "../middleware/auth";
 import { nowSeconds } from "../lib/validate";
 import { logEvent, EVENTS } from "../lib/events";
-import { sendEmail, welcomeEmail, verificationEmail } from "../lib/email";
+import { sendEmail, welcomeEmail } from "../lib/email";
 
 const app = new Hono<{ Bindings: Env; Variables: Variables }>();
 
@@ -31,57 +31,23 @@ app.post("/register", async (c) => {
   if (exists) return c.json({ error: "A user with that name or email already exists" }, 409);
 
   const canEmail = cfg.email_enabled && !!c.env.EMAIL && !!cfg.email_from;
-  const shouldVerify = cfg.require_email_verification && canEmail;
 
   const hash = await hashPassword(password);
   const res = await c.env.DB.prepare(
-    "INSERT INTO users (name, email, password_hash, role, affiliation, country, website, bracket_id, verified, created_at) VALUES (?, ?, ?, 'user', ?, ?, ?, ?, ?, ?)"
+    "INSERT INTO users (name, email, password_hash, role, affiliation, country, website, bracket_id, created_at) VALUES (?, ?, ?, 'user', ?, ?, ?, ?, ?)"
   )
-    .bind(name, email, hash, body.affiliation || null, body.country || null, body.website || null, body.bracket_id || null, shouldVerify ? 0 : 1, nowSeconds())
+    .bind(name, email, hash, body.affiliation || null, body.country || null, body.website || null, body.bracket_id || null, nowSeconds())
     .run();
   const userId = res.meta.last_row_id as number;
   const token = await createSession(c.env, userId);
   c.header("Set-Cookie", sessionCookie(token));
-  c.set("user", { id: userId, name, email, role: "user", team_id: null, is_captain: 0, verified: shouldVerify ? 0 : 1 });
+  c.set("user", { id: userId, name, email, role: "user", team_id: null, is_captain: 0 });
   await logEvent(c, EVENTS.REGISTER, { message: name });
 
-  if (shouldVerify) {
-    await sendVerification(c, cfg, userId, email, name);
-  } else if (cfg.email_on_register && canEmail) {
+  if (cfg.email_on_register && canEmail) {
     const tpl = welcomeEmail(cfg, name);
     c.executionCtx.waitUntil(sendEmail(c.env, cfg, email, tpl.subject, tpl.html).then(() => {}));
   }
-  return c.json({ ok: true, verification_required: shouldVerify });
-});
-
-// Generate a verification token, store it in KV (24h), and email the link.
-async function sendVerification(c: any, cfg: any, userId: number, email: string, name: string) {
-  const token = randomToken(24);
-  await c.env.SESSIONS.put(`verify:${token}`, String(userId), { expirationTtl: 60 * 60 * 24 });
-  const link = `${new URL(c.req.url).origin}/api/auth/verify?token=${token}`;
-  const tpl = verificationEmail(cfg, name, link);
-  c.executionCtx.waitUntil(sendEmail(c.env, cfg, email, tpl.subject, tpl.html).then(() => {}));
-}
-
-// Verify link target (clicked from email) → marks user verified, redirects to app.
-app.get("/verify", async (c) => {
-  const token = c.req.query("token");
-  if (!token) return c.redirect("/?verified=invalid");
-  const userId = await c.env.SESSIONS.get(`verify:${token}`);
-  if (!userId) return c.redirect("/?verified=expired");
-  await c.env.DB.prepare("UPDATE users SET verified = 1 WHERE id = ?").bind(Number(userId)).run();
-  await c.env.SESSIONS.delete(`verify:${token}`);
-  return c.redirect("/?verified=1");
-});
-
-// Resend the verification email to the logged-in (unverified) user.
-app.post("/resend-verification", requireAuth, async (c) => {
-  const u = c.var.user!;
-  if (u.verified) return c.json({ ok: true, already: true });
-  const cfg = await getConfig(c.env);
-  if (!(cfg.email_enabled && c.env.EMAIL && cfg.email_from))
-    return c.json({ error: "Email sending is not configured" }, 400);
-  await sendVerification(c, cfg, u.id, u.email, u.name);
   return c.json({ ok: true });
 });
 
@@ -102,7 +68,7 @@ app.post("/login", async (c) => {
 
   const token = await createSession(c.env, user.id);
   c.header("Set-Cookie", sessionCookie(token));
-  c.set("user", { id: user.id, name: "", email: "", role: "user", team_id: null, is_captain: 0, verified: 1 });
+  c.set("user", { id: user.id, name: "", email: "", role: "user", team_id: null, is_captain: 0 });
   await logEvent(c, EVENTS.LOGIN, {});
   return c.json({ ok: true });
 });

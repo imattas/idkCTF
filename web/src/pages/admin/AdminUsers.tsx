@@ -7,7 +7,7 @@ import { COUNTRIES } from "../../countries";
 
 interface AdminUser {
   id: number; name: string; email: string; role: string;
-  team_name: string | null; hidden: number; banned: number; verified: number;
+  team_name: string | null; hidden: number; banned: number;
 }
 
 export default function AdminUsers() {
@@ -46,7 +46,6 @@ export default function AdminUsers() {
                 <td className="px-4 py-3 text-slate-400">{u.team_name || "—"}</td>
                 <td className="px-4 py-3">{u.role === "admin" ? <span className="badge border-sky-700 text-accent">admin</span> : "user"}</td>
                 <td className="px-4 py-3 space-x-1">
-                  {!u.verified ? <span className="badge border-amber-700 text-amber-400">unverified</span> : null}
                   {u.hidden ? <span className="badge border-slate-600 text-slate-400">hidden</span> : null}
                   {u.banned ? <span className="badge border-rose-700 text-rose-400">banned</span> : null}
                 </td>
@@ -86,7 +85,7 @@ function UserModal({ id, self, onClose, onSaved }: { id: number; self: boolean; 
       const payload: any = {
         name: form.name, email: form.email, affiliation: form.affiliation, country: form.country, website: form.website,
         role: self ? undefined : form.role, hidden: form.hidden ? 1 : 0,
-        banned: self ? undefined : (form.banned ? 1 : 0), verified: form.verified ? 1 : 0,
+        banned: self ? undefined : (form.banned ? 1 : 0),
         bracket_id: form.bracket_id || null,
       };
       if (pw) payload.password = pw;
@@ -132,7 +131,6 @@ function UserModal({ id, self, onClose, onSaved }: { id: number; self: boolean; 
               <option value="user">user</option><option value="admin">admin</option>
             </select>
           </div>
-          <label className="flex items-center gap-2 text-sm text-slate-300 mt-5"><input type="checkbox" checked={!!form.verified} onChange={(e) => set("verified", e.target.checked)} /> Verified</label>
           <label className="flex items-center gap-2 text-sm text-slate-300 mt-5"><input type="checkbox" checked={!!form.hidden} onChange={(e) => set("hidden", e.target.checked)} /> Hidden</label>
           <label className="flex items-center gap-2 text-sm text-slate-300 mt-5"><input type="checkbox" disabled={self} checked={!!form.banned} onChange={(e) => set("banned", e.target.checked)} /> Banned</label>
         </div>

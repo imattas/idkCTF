@@ -96,12 +96,18 @@ export default function AdminChallenges() {
 const EMPTY = {
   name: "", category: "misc", description: "", connection_info: "",
   type: "static", state: "hidden", value: 100, initial: 500, minimum: 100, decay: 20,
-  max_attempts: 0, sort_order: 0, prerequisites: [] as number[],
+  max_attempts: 0, sort_order: 0, prerequisites: [] as number[], tags: [] as string[],
 };
 
 function parsePrereqs(raw: any): number[] {
   if (Array.isArray(raw)) return raw.map(Number);
   if (typeof raw === "string" && raw) { try { const a = JSON.parse(raw); return Array.isArray(a) ? a.map(Number) : []; } catch { return []; } }
+  return [];
+}
+
+function parseStrArr(raw: any): string[] {
+  if (Array.isArray(raw)) return raw.map(String);
+  if (typeof raw === "string" && raw) { try { const a = JSON.parse(raw); return Array.isArray(a) ? a.map(String) : []; } catch { return []; } }
   return [];
 }
 
@@ -115,7 +121,14 @@ function Editor({ id, onClose, onSaved }: { id: number | "new"; onClose: () => v
   const [err, setErr] = useState("");
   const [toast, setToast] = useState("");
   const [descPreview, setDescPreview] = useState(false);
+  const [tagInput, setTagInput] = useState("");
   const set = (k: string) => (e: any) => setForm({ ...form, [k]: e.target.value });
+  const addTag = () => {
+    const t = tagInput.trim();
+    if (t && !(form.tags || []).includes(t)) setForm({ ...form, tags: [...(form.tags || []), t] });
+    setTagInput("");
+  };
+  const removeTag = (t: string) => setForm({ ...form, tags: (form.tags || []).filter((x: string) => x !== t) });
 
   const detail = useQuery({
     queryKey: ["admin-challenge", chId],
@@ -125,7 +138,7 @@ function Editor({ id, onClose, onSaved }: { id: number | "new"; onClose: () => v
   const ch = detail.data?.challenge;
   const [loaded, setLoaded] = useState(false);
   if (ch && !loaded) {
-    setForm({ ...EMPTY, ...ch, connection_info: ch.connection_info ?? "", prerequisites: parsePrereqs(ch.prerequisites) });
+    setForm({ ...EMPTY, ...ch, connection_info: ch.connection_info ?? "", prerequisites: parsePrereqs(ch.prerequisites), tags: parseStrArr(ch.tags) });
     setLoaded(true);
   }
 
@@ -150,6 +163,7 @@ function Editor({ id, onClose, onSaved }: { id: number | "new"; onClose: () => v
       decay: form.type === "dynamic" ? Number(form.decay) : null,
       max_attempts: Number(form.max_attempts), sort_order: Number(form.sort_order),
       prerequisites: form.prerequisites || [],
+      tags: form.tags || [],
     };
     try {
       if (chId == null) {
@@ -223,6 +237,20 @@ function Editor({ id, onClose, onSaved }: { id: number | "new"; onClose: () => v
             )}
           </div>
           <div><label className="label">Connection info (optional)</label><input className="input mono" value={form.connection_info} onChange={set("connection_info")} placeholder="nc host 1337  ·  https://target" /></div>
+
+          <div>
+            <label className="label">Tags (custom — shown on the card, separate from category)</label>
+            <div className="mb-2 flex flex-wrap gap-2">
+              {(form.tags || []).map((t: string) => (
+                <span key={t} className="badge border-sky-700 text-accent">{t}<button type="button" className="ml-1 text-slate-400 hover:text-rose-400" onClick={() => removeTag(t)}>✕</button></span>
+              ))}
+              {!(form.tags || []).length && <span className="text-xs text-slate-500">No tags.</span>}
+            </div>
+            <div className="flex gap-2">
+              <input className="input" value={tagInput} onChange={(e) => setTagInput(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); addTag(); } }} placeholder="e.g. beginner, sqli, 2024 — press Enter" />
+              <button type="button" className="btn-ghost" onClick={addTag}>Add tag</button>
+            </div>
+          </div>
 
           <div className="grid grid-cols-3 gap-4">
             <div>

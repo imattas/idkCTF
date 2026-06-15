@@ -37,7 +37,7 @@ app.patch("/config", async (c) => {
     "visibility", "scoreboard_visible", "freeze_time", "start_time", "end_time",
     "paused", "block_vpn", "allow_name_change", "log_challenge_views",
     "theme", "accent", "custom_css", "footer_html", "home_content", "home_format", "custom_head",
-    "email_enabled", "email_from", "email_from_name", "email_on_register", "require_email_verification",
+    "email_enabled", "email_from", "email_from_name", "email_on_register",
   ];
   const updates: any = {};
   for (const k of allowed) if (k in body) updates[k] = body[k];
@@ -92,8 +92,8 @@ app.post("/challenges", async (c) => {
   const b = await c.req.json().catch(() => ({}));
   if (!b.name) return c.json({ error: "Name required" }, 400);
   const res = await c.env.DB.prepare(
-    `INSERT INTO challenges (name, category, description, connection_info, type, state, value, initial, minimum, decay, max_attempts, sort_order, prerequisites, created_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    `INSERT INTO challenges (name, category, description, connection_info, type, state, value, initial, minimum, decay, max_attempts, sort_order, prerequisites, tags, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
   )
     .bind(
       b.name, b.category || "misc", b.description || "", b.connection_info || null,
@@ -101,6 +101,7 @@ app.post("/challenges", async (c) => {
       Number(b.value ?? b.initial ?? 100), b.initial ?? null, b.minimum ?? null, b.decay ?? null,
       Number(b.max_attempts ?? 0), Number(b.sort_order ?? 0),
       Array.isArray(b.prerequisites) && b.prerequisites.length ? JSON.stringify(b.prerequisites) : null,
+      Array.isArray(b.tags) && b.tags.length ? JSON.stringify(b.tags) : null,
       nowSeconds()
     )
     .run();
@@ -120,6 +121,10 @@ app.patch("/challenges/:id", async (c) => {
   if ("prerequisites" in b) {
     sets.push("prerequisites = ?");
     binds.push(Array.isArray(b.prerequisites) && b.prerequisites.length ? JSON.stringify(b.prerequisites) : null);
+  }
+  if ("tags" in b) {
+    sets.push("tags = ?");
+    binds.push(Array.isArray(b.tags) && b.tags.length ? JSON.stringify(b.tags) : null);
   }
   if (!sets.length) return c.json({ ok: true });
   binds.push(id);
@@ -260,7 +265,7 @@ app.patch("/users/:id", async (c) => {
     if ("role" in b && b.role !== "admin") return c.json({ error: "You can't remove your own admin role" }, 400);
     if ("banned" in b && b.banned) return c.json({ error: "You can't ban yourself" }, 400);
   }
-  const cols = ["role", "hidden", "banned", "verified", "name", "email", "affiliation", "country", "website", "bracket_id", "team_id", "is_captain"];
+  const cols = ["role", "hidden", "banned", "name", "email", "affiliation", "country", "website", "bracket_id", "team_id", "is_captain"];
   const sets: string[] = [];
   const binds: any[] = [];
   for (const col of cols) if (col in b) { sets.push(`${col} = ?`); binds.push(b[col] === "" ? null : b[col]); }

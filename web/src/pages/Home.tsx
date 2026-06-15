@@ -28,14 +28,10 @@ function Countdown({ target, label }: { target: number; label: string }) {
 }
 
 export default function Home() {
-  const { config, user, competition_state, refresh } = useStore();
-  const verified = new URLSearchParams(window.location.search).get("verified");
-  useEffect(() => { if (verified === "1") refresh(); }, [verified]);
+  const { config, user, competition_state } = useStore();
 
   return (
     <div className="mx-auto max-w-3xl py-10 text-center">
-      {verified === "1" && <div className="mb-6 rounded-md border border-emerald-700 bg-emerald-950/40 p-3 text-sm text-emerald-300">✓ Email verified — you're all set!</div>}
-      {verified === "expired" && <div className="mb-6 rounded-md border border-amber-700 bg-amber-950/40 p-3 text-sm text-amber-300">That verification link has expired. Log in and resend it.</div>}
       <h1 className="mb-3 text-5xl font-bold text-white">{config.ctf_name}</h1>
       <p className="mx-auto mb-8 max-w-xl text-lg text-slate-400">{config.ctf_description}</p>
 

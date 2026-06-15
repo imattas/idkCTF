@@ -33,18 +33,6 @@ export async function sendEmail(
   }
 }
 
-export function verificationEmail(cfg: SiteConfig, name: string, link: string): { subject: string; html: string } {
-  return {
-    subject: `Verify your email for ${cfg.ctf_name}`,
-    html: `<div style="font-family:sans-serif">
-      <h2>Almost there, ${escapeHtml(name)}</h2>
-      <p>Confirm your email to activate your <strong>${escapeHtml(cfg.ctf_name)}</strong> account:</p>
-      <p><a href="${link}" style="display:inline-block;padding:10px 18px;background:#38bdf8;color:#020617;border-radius:6px;text-decoration:none;font-weight:600">Verify email</a></p>
-      <p style="color:#666;font-size:13px">Or paste this link: ${link}</p>
-    </div>`,
-  };
-}
-
 export function welcomeEmail(cfg: SiteConfig, name: string): { subject: string; html: string } {
   return {
     subject: `Welcome to ${cfg.ctf_name}`,

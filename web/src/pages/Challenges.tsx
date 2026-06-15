@@ -23,6 +23,10 @@ function catClass(cat: string) {
 export default function Challenges() {
   const { user, config } = useStore();
   const [openId, setOpenId] = useState<number | null>(null);
+  const [search, setSearch] = useState("");
+  const [sort, setSort] = useState("default");
+  const [activeTag, setActiveTag] = useState<string | null>(null);
+  const [activeCat, setActiveCat] = useState<string | null>(null);
 
   const { data, error, isLoading } = useQuery({
     queryKey: ["challenges"],
@@ -41,59 +45,103 @@ export default function Challenges() {
   }
 
   const challenges = data?.challenges ?? [];
-  const categories = [...new Set(challenges.map((c) => c.category))].sort();
   const total = challenges.length;
   const solved = challenges.filter((c) => c.solved).length;
 
+  // Filter (search + active tag/category), then sort.
+  const q = search.trim().toLowerCase();
+  let list = challenges.filter((c) => {
+    if (activeCat && c.category !== activeCat) return false;
+    if (activeTag && !(c.tags || []).includes(activeTag)) return false;
+    if (q && !(c.name.toLowerCase().includes(q) || c.category.toLowerCase().includes(q) || (c.tags || []).some((t) => t.toLowerCase().includes(q)))) return false;
+    return true;
+  });
+  const sorters: Record<string, ((a: ChallengeSummary, b: ChallengeSummary) => number) | null> = {
+    default: null,
+    points_desc: (a, b) => b.value - a.value,
+    points_asc: (a, b) => a.value - b.value,
+    solves_desc: (a, b) => b.solves - a.solves,
+    solves_asc: (a, b) => a.solves - b.solves,
+    name: (a, b) => a.name.localeCompare(b.name),
+    unsolved: (a, b) => Number(a.solved) - Number(b.solved) || a.category.localeCompare(b.category),
+  };
+  if (sorters[sort]) list = [...list].sort(sorters[sort]!);
+  const categories = [...new Set(list.map((c) => c.category))].sort();
+
+  const renderCard = (c: ChallengeSummary) => (
+    <div
+      key={c.id}
+      onClick={() => setOpenId(c.id)}
+      className={`card cursor-pointer transition hover:border-sky-600 hover:bg-slate-800/60 ${
+        c.solved ? "border-emerald-700/60 bg-emerald-950/20" : ""
+      } ${c.locked ? "opacity-60" : ""}`}
+    >
+      <div className="mb-2 flex items-center justify-between">
+        <button onClick={(e) => { e.stopPropagation(); setActiveCat(c.category); setActiveTag(null); }} className={`badge ${catClass(c.category)} hover:opacity-80`}>{c.category}</button>
+        {c.locked ? <span title="Locked">🔒</span> : c.solved && <span className="text-emerald-400">✓</span>}
+      </div>
+      <div className="font-medium text-white">{c.name}</div>
+      {c.tags?.length > 0 && (
+        <div className="mt-2 flex flex-wrap gap-1">
+          {c.tags.map((t) => (
+            <button key={t} onClick={(e) => { e.stopPropagation(); setActiveTag(t); setActiveCat(null); }} className="badge border-slate-700 text-slate-400 text-[10px] hover:border-sky-600 hover:text-accent">{t}</button>
+          ))}
+        </div>
+      )}
+      <div className="mt-2 flex items-center justify-between text-xs text-slate-400">
+        <span className="mono text-sky-400">{c.value} pts</span>
+        <span>{c.solves} solves</span>
+      </div>
+    </div>
+  );
+
   return (
     <div>
-      <div className="mb-6 flex items-end justify-between">
+      <div className="mb-4 flex items-end justify-between">
         <div>
           <h1 className="text-2xl font-bold text-white">Challenges</h1>
-          {user && (
-            <p className="text-sm text-slate-400">
-              Solved {solved} / {total}
-            </p>
-          )}
+          {user && <p className="text-sm text-slate-400">Solved {solved} / {total}</p>}
         </div>
         {config.mode === "teams" && user && !user.team_id && (
           <span className="badge border-amber-700 text-amber-400">Join a team to submit flags</span>
         )}
       </div>
 
-      {total === 0 && <p className="text-slate-500">No challenges released yet.</p>}
+      {/* Toolbar: search · sort · active filter */}
+      <div className="mb-6 flex flex-wrap items-center gap-3">
+        <input className="input max-w-xs" placeholder="🔍 Search challenges…" value={search} onChange={(e) => setSearch(e.target.value)} />
+        <select className="input w-auto" value={sort} onChange={(e) => setSort(e.target.value)}>
+          <option value="default">Sort: Category</option>
+          <option value="points_desc">Points: high → low</option>
+          <option value="points_asc">Points: low → high</option>
+          <option value="solves_desc">Most solved</option>
+          <option value="solves_asc">Fewest solved</option>
+          <option value="name">Name: A → Z</option>
+          <option value="unsolved">Unsolved first</option>
+        </select>
+        {(activeCat || activeTag) && (
+          <button onClick={() => { setActiveCat(null); setActiveTag(null); }} className="badge border-sky-600 text-accent">
+            {activeCat ? `category: ${activeCat}` : `tag: ${activeTag}`} ✕
+          </button>
+        )}
+        <span className="ml-auto text-xs text-slate-500">{list.length} of {total}</span>
+      </div>
 
-      {categories.map((cat) => (
-        <section key={cat} className="mb-8">
-          <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-slate-400">{cat}</h2>
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
-            {challenges
-              .filter((c) => c.category === cat)
-              .map((c) => (
-                <button
-                  key={c.id}
-                  onClick={() => setOpenId(c.id)}
-                  className={`card text-left transition hover:border-sky-600 hover:bg-slate-800/60 ${
-                    c.solved ? "border-emerald-700/60 bg-emerald-950/20" : ""
-                  } ${c.locked ? "opacity-60" : ""}`}
-                >
-                  <div className="mb-2 flex items-center justify-between">
-                    <span className={`badge ${catClass(c.category)}`}>{c.category}</span>
-                    {c.locked ? <span title="Locked">🔒</span> : c.solved && <span className="text-emerald-400">✓</span>}
-                  </div>
-                  <div className="font-medium text-white">{c.name}</div>
-                  <div className="mt-2 flex items-center justify-between text-xs text-slate-400">
-                    <span className="mono text-sky-400">{c.value} pts</span>
-                    <span>{c.solves} solves</span>
-                  </div>
-                  {c.state === "hidden" && (
-                    <span className="mt-2 inline-block badge border-amber-700 text-amber-400">hidden</span>
-                  )}
-                </button>
-              ))}
-          </div>
-        </section>
-      ))}
+      {total === 0 && <p className="text-slate-500">No challenges released yet.</p>}
+      {total > 0 && list.length === 0 && <p className="text-slate-500">No challenges match your filters.</p>}
+
+      {sort === "default" ? (
+        categories.map((cat) => (
+          <section key={cat} className="mb-8">
+            <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-slate-400">{cat}</h2>
+            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
+              {list.filter((c) => c.category === cat).map(renderCard)}
+            </div>
+          </section>
+        ))
+      ) : (
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">{list.map(renderCard)}</div>
+      )}
 
       {openId != null && <ChallengeModal id={openId} onClose={() => setOpenId(null)} />}
     </div>
@@ -114,6 +162,7 @@ function ChallengeModal({ id, onClose }: { id: number; onClose: () => void }) {
   const qc = useQueryClient();
   const [flag, setFlag] = useState("");
   const [result, setResult] = useState<{ ok: boolean; msg: string } | null>(null);
+  const [fbKey, setFbKey] = useState(0);
   const [busy, setBusy] = useState(false);
 
   const { data, isLoading, refetch } = useQuery({
@@ -131,6 +180,7 @@ function ChallengeModal({ id, onClose }: { id: number; onClose: () => void }) {
       const r = await api.post<{ status: string; message: string }>(`/submit/${id}`, { flag });
       const ok = r.status === "correct";
       setResult({ ok, msg: r.message });
+      setFbKey((k) => k + 1);
       if (ok || r.status === "already_solved") {
         setFlag("");
         await refetch();
@@ -139,6 +189,7 @@ function ChallengeModal({ id, onClose }: { id: number; onClose: () => void }) {
       }
     } catch (e) {
       setResult({ ok: false, msg: e instanceof ApiError ? e.message : "Error" });
+      setFbKey((k) => k + 1);
     } finally {
       setBusy(false);
     }
@@ -176,6 +227,7 @@ function ChallengeModal({ id, onClose }: { id: number; onClose: () => void }) {
             <span className="badge border-slate-700 text-slate-300">{ch.type}</span>
             <span className="text-slate-400">{ch.solves} solves</span>
             {ch.solved && <span className="badge border-emerald-700 text-emerald-400">Solved ✓</span>}
+            {ch.tags?.map((t) => <span key={t} className="badge border-slate-700 text-slate-400">{t}</span>)}
           </div>
 
           <Markdown content={ch.description} format="markdown" />
@@ -239,11 +291,15 @@ function ChallengeModal({ id, onClose }: { id: number; onClose: () => void }) {
 
           {result && (
             <div
-              className={`rounded-md border p-3 text-sm ${
-                result.ok ? "border-emerald-700 bg-emerald-950/40 text-emerald-300" : "border-rose-700 bg-rose-950/40 text-rose-300"
+              key={fbKey}
+              className={`flex items-center gap-2 rounded-md border p-3 text-base font-medium ${
+                result.ok
+                  ? "border-emerald-600 bg-emerald-950/50 text-emerald-300 feedback-correct"
+                  : "border-rose-600 bg-rose-950/50 text-rose-300 feedback-wrong"
               }`}
             >
-              {result.msg}
+              <span className="text-xl">{result.ok ? "✅" : "❌"}</span>
+              <span>{result.msg}</span>
             </div>
           )}
 

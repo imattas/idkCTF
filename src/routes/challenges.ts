@@ -19,6 +19,11 @@ function parsePrereqs(raw: string | null): number[] {
   try { const a = JSON.parse(raw); return Array.isArray(a) ? a.map(Number) : []; } catch { return []; }
 }
 
+function parseTags(raw: string | null): string[] {
+  if (!raw) return [];
+  try { const a = JSON.parse(raw); return Array.isArray(a) ? a.map(String) : []; } catch { return []; }
+}
+
 // Set of challenge IDs the given account has solved.
 async function solvedSetFor(c: AppContext, mode: "teams" | "users", acct: number | null): Promise<Set<number>> {
   const set = new Set<number>();
@@ -48,7 +53,7 @@ app.get("/", async (c) => {
   // manage hidden/draft challenges in the Admin panel. This keeps the board
   // identical to what players actually see.
   const rows = await c.env.DB.prepare(
-    `SELECT id, name, category, type, value, initial, minimum, decay, state, sort_order, prerequisites FROM challenges WHERE state = 'visible' ORDER BY category, sort_order, id`
+    `SELECT id, name, category, type, value, initial, minimum, decay, state, sort_order, prerequisites, tags FROM challenges WHERE state = 'visible' ORDER BY category, sort_order, id`
   ).all<any>();
   const values = await challengeValues(c.env);
   const counts = await c.env.DB.prepare("SELECT challenge_id, COUNT(*) AS n FROM solves GROUP BY challenge_id").all<{ challenge_id: number; n: number }>();
@@ -70,6 +75,7 @@ app.get("/", async (c) => {
       solves: countMap.get(r.id) ?? 0,
       solved: solvedSet.has(r.id),
       locked,
+      tags: parseTags(r.tags),
     };
   });
   return c.json({ challenges });
@@ -157,6 +163,7 @@ app.get("/:id", async (c) => {
       id: ch.id, name: ch.name, category: ch.category, description: ch.description,
       connection_info: ch.connection_info, type: ch.type, state: ch.state, max_attempts: ch.max_attempts,
       value: values.get(ch.id) ?? ch.value, solves: countRow?.n ?? 0, solved, locked: false,
+      tags: parseTags(ch.tags),
       files: files.results, hints, solvers: solvers.results, reviews, writeups, attempts,
     },
   });

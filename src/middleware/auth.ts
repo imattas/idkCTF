@@ -12,7 +12,7 @@ async function userFromToken(env: Env, req: Request): Promise<SessionUser | null
   if (!token) return null;
   const hash = await sha256hex(token);
   const row = await env.DB.prepare(
-    `SELECT u.id, u.name, u.email, u.role, u.team_id, u.is_captain, u.verified, u.banned, t.id AS tid
+    `SELECT u.id, u.name, u.email, u.role, u.team_id, u.is_captain, u.banned, t.id AS tid
      FROM api_tokens t JOIN users u ON u.id = t.user_id WHERE t.token_hash = ?`
   )
     .bind(hash)
