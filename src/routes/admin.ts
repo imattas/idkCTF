@@ -42,6 +42,7 @@ app.patch("/config", async (c) => {
   const updates: any = {};
   for (const k of allowed) if (k in body) updates[k] = body[k];
   await setConfig(c.env, updates);
+  await logEvent(c, EVENTS.ADMIN_ACTION, { message: `Updated site settings (${Object.keys(updates).join(", ")})` });
   return c.json({ ok: true });
 });
 
@@ -105,6 +106,7 @@ app.post("/challenges", async (c) => {
       nowSeconds()
     )
     .run();
+  await logEvent(c, EVENTS.CHALLENGE_CREATE, { challenge_id: res.meta.last_row_id as number, message: b.name });
   return c.json({ ok: true, id: res.meta.last_row_id });
 });
 
@@ -129,12 +131,16 @@ app.patch("/challenges/:id", async (c) => {
   if (!sets.length) return c.json({ ok: true });
   binds.push(id);
   await c.env.DB.prepare(`UPDATE challenges SET ${sets.join(", ")} WHERE id = ?`).bind(...binds).run();
+  const nm = await c.env.DB.prepare("SELECT name FROM challenges WHERE id = ?").bind(id).first<{ name: string }>();
+  await logEvent(c, EVENTS.CHALLENGE_UPDATE, { challenge_id: id, message: nm?.name ?? `#${id}` });
   return c.json({ ok: true });
 });
 
 app.delete("/challenges/:id", async (c) => {
   const id = Number(c.req.param("id"));
+  const nm = await c.env.DB.prepare("SELECT name FROM challenges WHERE id = ?").bind(id).first<{ name: string }>();
   await c.env.DB.prepare("DELETE FROM challenges WHERE id = ?").bind(id).run();
+  await logEvent(c, EVENTS.CHALLENGE_DELETE, { message: nm?.name ?? `#${id}` });
   return c.json({ ok: true });
 });
 
@@ -161,6 +167,7 @@ app.post("/challenges/:id/clone", async (c) => {
   for (const h of hints.results) stmts.push(c.env.DB.prepare("INSERT INTO hints (challenge_id, content, cost, sort_order) VALUES (?, ?, ?, ?)").bind(newId, h.content, h.cost, h.sort_order));
   for (const f of files.results) stmts.push(c.env.DB.prepare("INSERT INTO files (challenge_id, name, size, content_type, r2_key, data, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)").bind(newId, f.name, f.size, f.content_type, f.r2_key, f.data, now));
   if (stmts.length) await c.env.DB.batch(stmts);
+  await logEvent(c, EVENTS.CHALLENGE_CREATE, { challenge_id: newId, message: `${src.name} (copy)` });
   return c.json({ ok: true, id: newId });
 });
 
@@ -277,6 +284,9 @@ app.patch("/users/:id", async (c) => {
   if (!sets.length) return c.json({ ok: true });
   binds.push(id);
   await c.env.DB.prepare(`UPDATE users SET ${sets.join(", ")} WHERE id = ?`).bind(...binds).run();
+  // Log notable changes (ban, role) explicitly.
+  if ("banned" in b) await logEvent(c, EVENTS.ADMIN_ACTION, { message: `${b.banned ? "Banned" : "Unbanned"} user #${id}` });
+  else if ("role" in b) await logEvent(c, EVENTS.ADMIN_ACTION, { message: `Set user #${id} role to ${b.role}` });
   return c.json({ ok: true });
 });
 
@@ -308,19 +318,24 @@ app.post("/users/:id/grant-solve", async (c) => {
   await c.env.DB.prepare(
     "INSERT OR IGNORE INTO solves (challenge_id, user_id, team_id, created_at) VALUES (?, ?, ?, ?)"
   ).bind(challengeId, id, u.team_id, nowSeconds()).run();
+  await logEvent(c, EVENTS.ADMIN_ACTION, { challenge_id: challengeId, message: `Granted solve to user #${id}` });
   return c.json({ ok: true });
 });
 
 // Remove any solve by id (user or team).
 app.delete("/solves/:id", async (c) => {
-  await c.env.DB.prepare("DELETE FROM solves WHERE id = ?").bind(Number(c.req.param("id"))).run();
+  const sid = Number(c.req.param("id"));
+  await c.env.DB.prepare("DELETE FROM solves WHERE id = ?").bind(sid).run();
+  await logEvent(c, EVENTS.ADMIN_ACTION, { message: `Removed solve #${sid}` });
   return c.json({ ok: true });
 });
 
 app.delete("/users/:id", async (c) => {
   const id = Number(c.req.param("id"));
   if (id === c.var.user!.id) return c.json({ error: "Cannot delete yourself" }, 400);
+  const nm = await c.env.DB.prepare("SELECT name FROM users WHERE id = ?").bind(id).first<{ name: string }>();
   await c.env.DB.prepare("DELETE FROM users WHERE id = ?").bind(id).run();
+  await logEvent(c, EVENTS.ADMIN_ACTION, { message: `Deleted user ${nm?.name ?? `#${id}`}` });
   return c.json({ ok: true });
 });
 
@@ -386,8 +401,10 @@ app.post("/teams/:id/captain", async (c) => {
 
 app.delete("/teams/:id", async (c) => {
   const id = Number(c.req.param("id"));
+  const nm = await c.env.DB.prepare("SELECT name FROM teams WHERE id = ?").bind(id).first<{ name: string }>();
   await c.env.DB.prepare("UPDATE users SET team_id = NULL, is_captain = 0 WHERE team_id = ?").bind(id).run();
   await c.env.DB.prepare("DELETE FROM teams WHERE id = ?").bind(id).run();
+  await logEvent(c, EVENTS.ADMIN_ACTION, { message: `Deleted team ${nm?.name ?? `#${id}`}` });
   return c.json({ ok: true });
 });
 

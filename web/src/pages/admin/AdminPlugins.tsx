@@ -8,7 +8,7 @@ interface Plugin {
   config: Record<string, any>;
 }
 
-const ALL_EVENTS = ["solve", "first_blood", "flag.submit", "auth.register", "auth.login", "hint.unlock", "team.create", "challenge.view", "vpn.blocked"];
+const ALL_EVENTS = ["solve", "first_blood", "flag.submit", "auth.register", "auth.login", "hint.unlock", "team.create", "challenge.view", "vpn.blocked", "challenge.create", "challenge.update", "challenge.delete", "admin.action"];
 
 const META: Record<string, { title: string; blurb: string; kind: "webhook" | "feature" }> = {
   discord_webhook: { kind: "webhook", title: "Discord Webhook", blurb: "Announce solves, first bloods and more to a Discord channel via an incoming webhook URL." },
@@ -79,10 +79,25 @@ function PluginCard({ plugin, onSaved }: { plugin: Plugin; onSaved: () => void }
           </div>
 
           {plugin.name === "discord_webhook" && (
-            <div className="grid grid-cols-2 gap-4">
-              <div><label className="label">Bot username</label><input className="input" value={cfg.username || ""} onChange={(e) => setCfg({ ...cfg, username: e.target.value })} /></div>
-              <div><label className="label">Mention (e.g. @here)</label><input className="input" value={cfg.mention || ""} onChange={(e) => setCfg({ ...cfg, mention: e.target.value })} /></div>
-            </div>
+            <>
+              <div className="grid grid-cols-3 gap-4">
+                <div><label className="label">Bot username</label><input className="input" value={cfg.username || ""} onChange={(e) => setCfg({ ...cfg, username: e.target.value })} /></div>
+                <div><label className="label">Mention (e.g. @here)</label><input className="input" value={cfg.mention || ""} onChange={(e) => setCfg({ ...cfg, mention: e.target.value })} /></div>
+                <div>
+                  <label className="label">Format</label>
+                  <select className="input" value={cfg.format || "embed"} onChange={(e) => setCfg({ ...cfg, format: e.target.value })}>
+                    <option value="embed">Embed</option>
+                    <option value="message">Message</option>
+                    <option value="both">Both</option>
+                  </select>
+                </div>
+              </div>
+              <div>
+                <label className="label">Custom message template (optional)</label>
+                <textarea className="input mono" rows={2} value={cfg.template || ""} onChange={(e) => setCfg({ ...cfg, template: e.target.value })} placeholder="🚩 {user} solved {challenge}!" />
+                <p className="mt-1 text-xs text-slate-500">Variables: <code className="mono">{"{user} {challenge} {team} {event} {message} {ip} {time}"}</code>. Leave blank for the default text.</p>
+              </div>
+            </>
           )}
           {plugin.name === "generic_webhook" && (
             <div><label className="label">HMAC secret (optional)</label><input className="input mono" value={cfg.secret || ""} onChange={(e) => setCfg({ ...cfg, secret: e.target.value })} placeholder="signs X-CloudCTF-Signature" /></div>

@@ -16,6 +16,9 @@ export const EVENTS = {
   TEAM_JOIN: "team.join",
   VPN_BLOCKED: "vpn.blocked",
   ADMIN_ACTION: "admin.action",
+  CHALLENGE_CREATE: "challenge.create",
+  CHALLENGE_UPDATE: "challenge.update",
+  CHALLENGE_DELETE: "challenge.delete",
 } as const;
 
 // Organisations commonly associated with hosting / proxy / VPN exit nodes.

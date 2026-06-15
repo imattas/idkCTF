@@ -27,6 +27,10 @@ const TYPE_COLORS: Record<string, string> = {
   "auth.logout": "border-violet-700 text-violet-400",
   "auth.register": "border-violet-700 text-violet-400",
   "vpn.blocked": "border-amber-700 text-amber-400",
+  "challenge.create": "border-emerald-700 text-emerald-400",
+  "challenge.update": "border-sky-700 text-sky-400",
+  "challenge.delete": "border-rose-700 text-rose-400",
+  "admin.action": "border-indigo-700 text-indigo-400",
 };
 
 export default function AdminLogs() {

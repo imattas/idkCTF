@@ -50,11 +50,28 @@ export async function dispatchToPlugins(env: Env, type: string, payload: any): P
 
 async function enrich(env: Env, payload: any): Promise<any> {
   let challenge_name: string | null = null;
+  let team_name: string | null = null;
   if (payload.challenge_id) {
     const c = await env.DB.prepare("SELECT name FROM challenges WHERE id = ?").bind(payload.challenge_id).first<{ name: string }>();
     challenge_name = c?.name ?? null;
   }
-  return { ...payload, challenge_name };
+  if (payload.team_id) {
+    const t = await env.DB.prepare("SELECT name FROM teams WHERE id = ?").bind(payload.team_id).first<{ name: string }>();
+    team_name = t?.name ?? null;
+  }
+  return { ...payload, challenge_name, team_name };
+}
+
+// Replace {user}/{time}/{challenge}/{team}/{event}/{message}/{ip} placeholders.
+export function renderTemplate(tpl: string, p: any): string {
+  return String(tpl)
+    .replaceAll("{user}", p.actor?.name ?? "Someone")
+    .replaceAll("{challenge}", p.challenge_name ?? "")
+    .replaceAll("{team}", p.team_name ?? "")
+    .replaceAll("{event}", p.type ?? "")
+    .replaceAll("{message}", p.message ?? "")
+    .replaceAll("{ip}", p.ip ?? "")
+    .replaceAll("{time}", new Date((p.at ?? 0) * 1000).toISOString());
 }
 
 async function deliver(plugin: PluginRow, type: string, payload: any): Promise<void> {
@@ -86,18 +103,21 @@ function describe(type: string, p: any): string {
 
 export async function deliverDiscord(cfg: any, type: string, p: any): Promise<void> {
   if (!cfg.url) return;
-  const content = (cfg.mention ? `${cfg.mention} ` : "") + (type === "first_blood" ? describe(type, p) : "");
-  const body = {
-    username: cfg.username || "CloudCTF",
-    content: content || undefined,
-    embeds: [
-      {
-        description: describe(type, p),
-        color: COLORS[type] ?? COLORS.default,
-        timestamp: new Date(p.at * 1000).toISOString(),
-      },
-    ],
-  };
+  const text = cfg.template ? renderTemplate(cfg.template, p) : describe(type, p);
+  const format = cfg.format || "embed"; // 'embed' | 'message' | 'both'
+  const mention = cfg.mention ? `${cfg.mention} ` : "";
+
+  // Mention always goes in content (so it pings); message text goes in content
+  // when the format includes 'message'.
+  let content = mention;
+  if (format === "message" || format === "both") content += text;
+  content = content.trim();
+
+  const body: any = { username: cfg.username || "CloudCTF" };
+  if (content) body.content = content;
+  if (format === "embed" || format === "both") {
+    body.embeds = [{ description: text, color: COLORS[type] ?? COLORS.default, timestamp: new Date((p.at ?? 0) * 1000).toISOString() }];
+  }
   await fetch(cfg.url, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
