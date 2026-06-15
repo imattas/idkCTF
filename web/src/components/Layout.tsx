@@ -1,4 +1,5 @@
 import { useEffect, useRef } from "react";
+import DOMPurify from "dompurify";
 import { Outlet, NavLink, useNavigate, useLocation, Link } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { useStore } from "../store";
@@ -105,7 +106,7 @@ export default function Layout() {
           {config.scoreboard_visible && <Link to="/scoreboard" className="hover:text-accent">Scoreboard</Link>}
         </div>
         {config.footer_html && (
-          <div className="mx-auto mt-4 max-w-7xl px-4 text-center text-xs text-slate-500" dangerouslySetInnerHTML={{ __html: config.footer_html }} />
+          <div className="mx-auto mt-4 max-w-7xl px-4 text-center text-xs text-slate-500" dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(config.footer_html, { ADD_ATTR: ["target"] }) }} />
         )}
         <div className="mt-4 text-center text-xs text-slate-600">{config.ctf_name} · powered by CloudCTF on Cloudflare</div>
       </footer>
