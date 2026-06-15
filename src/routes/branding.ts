@@ -22,6 +22,7 @@ app.get("/:key", async (c) => {
   const headers: Record<string, string> = {
     "Content-Type": row.content_type || "application/octet-stream",
     "Cache-Control": "public, max-age=300",
+    "X-Content-Type-Options": "nosniff",
   };
   if (row.r2_key && c.env.FILES) {
     const obj = await c.env.FILES.get(row.r2_key);

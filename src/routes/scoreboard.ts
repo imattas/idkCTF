@@ -43,7 +43,7 @@ app.get("/graph", async (c) => {
   if (!ids.length) return c.json({ series: [] });
 
   const col = a.cfg.mode === "teams" ? "team_id" : "user_id";
-  const andCutoff = a.cutoff ? ` AND created_at <= ${a.cutoff}` : "";
+  const andCutoff = a.cutoff ? ` AND created_at <= ${Math.floor(Number(a.cutoff))}` : "";
   const placeholders = ids.map(() => "?").join(",");
 
   const solves = await c.env.DB.prepare(

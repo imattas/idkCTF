@@ -24,6 +24,15 @@ import admin from "./routes/admin";
 const app = new Hono<{ Bindings: Env; Variables: Variables }>();
 
 const api = new Hono<{ Bindings: Env; Variables: Variables }>();
+// Defense-in-depth security headers on API responses (best-effort; some
+// responses like file streams have immutable headers).
+api.use("*", async (c, next) => {
+  await next();
+  try {
+    c.header("X-Content-Type-Options", "nosniff");
+    c.header("Referrer-Policy", "strict-origin-when-cross-origin");
+  } catch {}
+});
 api.use("*", loadUser);
 
 // Everything the frontend needs on load: public config + current user.
@@ -98,7 +107,15 @@ api.onError((err, c) => {
 
 app.route("/api", api);
 
-// Everything else => static SPA assets (wrangler serves index.html for unknown routes).
-app.all("*", (c) => c.env.ASSETS.fetch(c.req.raw));
+// Everything else => static SPA assets (wrangler serves index.html for unknown
+// routes). Add security headers (clickjacking / MIME-sniff protection).
+app.all("*", async (c) => {
+  const res = await c.env.ASSETS.fetch(c.req.raw);
+  const out = new Response(res.body, res);
+  out.headers.set("X-Content-Type-Options", "nosniff");
+  out.headers.set("X-Frame-Options", "SAMEORIGIN");
+  out.headers.set("Referrer-Policy", "strict-origin-when-cross-origin");
+  return out;
+});
 
 export default app;

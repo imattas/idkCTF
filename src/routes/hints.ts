@@ -4,6 +4,7 @@ import { getConfig } from "../lib/config";
 import { requireAuth } from "../middleware/auth";
 import { nowSeconds } from "../lib/validate";
 import { logEvent, EVENTS } from "../lib/events";
+import { canAccessChallenge } from "../lib/access";
 
 const app = new Hono<{ Bindings: Env; Variables: Variables }>();
 app.use("*", requireAuth);
@@ -14,10 +15,14 @@ app.post("/:id/unlock", async (c) => {
   const hintId = Number(c.req.param("id"));
   const cfg = await getConfig(c.env);
 
-  const hint = await c.env.DB.prepare("SELECT id, cost FROM hints WHERE id = ?")
+  const hint = await c.env.DB.prepare("SELECT id, cost, challenge_id FROM hints WHERE id = ?")
     .bind(hintId)
-    .first<{ id: number; cost: number }>();
+    .first<{ id: number; cost: number; challenge_id: number }>();
   if (!hint) return c.json({ error: "Hint not found" }, 404);
+
+  // Don't allow unlocking hints of hidden or still-locked challenges.
+  if (!(await canAccessChallenge(c.env, hint.challenge_id, u, cfg.mode)))
+    return c.json({ error: "Hint not found" }, 404);
 
   if (cfg.mode === "teams" && !u.team_id)
     return c.json({ error: "Join a team before unlocking hints" }, 400);

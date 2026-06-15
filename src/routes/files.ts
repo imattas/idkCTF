@@ -2,6 +2,7 @@ import { Hono } from "hono";
 import type { Env, Variables } from "../types";
 import { getConfig } from "../lib/config";
 import { logEvent, EVENTS } from "../lib/events";
+import { canAccessChallenge } from "../lib/access";
 
 const app = new Hono<{ Bindings: Env; Variables: Variables }>();
 
@@ -24,7 +25,8 @@ app.get("/:id", async (c) => {
     .bind(id)
     .first<any>();
   if (!file) return c.json({ error: "Not found" }, 404);
-  if (file.ch_state !== "visible" && c.var.user?.role !== "admin")
+  // Hidden and still-locked (prerequisite) challenges' files are inaccessible.
+  if (!(await canAccessChallenge(c.env, file.challenge_id, c.var.user, cfg.mode)))
     return c.json({ error: "Not found" }, 404);
 
   if (c.var.user) {
@@ -33,7 +35,8 @@ app.get("/:id", async (c) => {
 
   const headers: Record<string, string> = {
     "Content-Type": file.content_type || "application/octet-stream",
-    "Content-Disposition": `attachment; filename="${file.name.replace(/"/g, "")}"`,
+    "Content-Disposition": `attachment; filename="${String(file.name).replace(/"/g, "")}"`,
+    "X-Content-Type-Options": "nosniff",
   };
 
   if (file.r2_key && c.env.FILES) {

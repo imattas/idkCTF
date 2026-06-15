@@ -8,6 +8,7 @@ import { nowSeconds } from "../lib/validate";
 import { logEvent, EVENTS, extractMeta } from "../lib/events";
 import { sendEmail, welcomeEmail } from "../lib/email";
 import { isIpBanned, isUsernameBanned } from "../lib/bans";
+import { rateLimit } from "../lib/ratelimit";
 
 const app = new Hono<{ Bindings: Env; Variables: Variables }>();
 
@@ -31,8 +32,10 @@ app.post("/register", async (c) => {
     .first();
   if (exists) return c.json({ error: "A user with that name or email already exists" }, 409);
 
-  // Registration gates: IP ban, VPN, username ban, access code.
+  // Registration gates: rate limit, IP ban, VPN, username ban, access code.
   const ip = c.req.header("CF-Connecting-IP") || null;
+  if (!(await rateLimit(c.env, `register:${ip || "?"}`, 8, 600)))
+    return c.json({ error: "Too many sign-ups from your network. Try again later." }, 429);
   if (await isIpBanned(c.env, ip)) return c.json({ error: "Registration is not allowed from your network." }, 403);
   if (cfg.block_vpn_signup && extractMeta(c).is_vpn)
     return c.json({ error: "Registrations from VPN/proxy networks are not allowed." }, 403);
@@ -64,8 +67,11 @@ app.post("/register", async (c) => {
 });
 
 app.post("/login", async (c) => {
-  if (await isIpBanned(c.env, c.req.header("CF-Connecting-IP") || null))
+  const loginIp = c.req.header("CF-Connecting-IP") || null;
+  if (await isIpBanned(c.env, loginIp))
     return c.json({ error: "Access from your network is blocked." }, 403);
+  if (!(await rateLimit(c.env, `login:${loginIp || "?"}`, 15, 300)))
+    return c.json({ error: "Too many login attempts. Please wait a few minutes." }, 429);
   const body = await c.req.json().catch(() => ({}));
   const ident = String(body.email || body.name || "").trim().toLowerCase();
   const password = String(body.password || "");

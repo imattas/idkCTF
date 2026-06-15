@@ -49,7 +49,8 @@ export async function computeStandings(
   bracketId: number | null = null
 ): Promise<StandingEntry[]> {
   const values = await challengeValues(env, cutoff);
-  const andCutoff = cutoff ? ` AND created_at <= ${cutoff}` : "";
+  const cut = cutoff ? Math.floor(Number(cutoff)) : null;
+  const andCutoff = cut ? ` AND created_at <= ${cut}` : "";
   const table = mode === "teams" ? "teams" : "users";
   const bracketClause = bracketId ? " AND bracket_id = ?" : "";
 
@@ -91,7 +92,7 @@ export async function computeStandings(
 
   // Hint costs (deduct)
   const hints = await env.DB.prepare(
-    `SELECT hu.user_id AS user_id, hu.team_id AS team_id, h.cost AS cost FROM hint_unlocks hu JOIN hints h ON h.id = hu.hint_id WHERE 1=1${cutoff ? ` AND hu.created_at <= ${cutoff}` : ""}`
+    `SELECT hu.user_id AS user_id, hu.team_id AS team_id, h.cost AS cost FROM hint_unlocks hu JOIN hints h ON h.id = hu.hint_id WHERE 1=1${cut ? ` AND hu.created_at <= ${cut}` : ""}`
   ).all<{ user_id: number; team_id: number | null; cost: number }>();
   for (const h of hints.results) {
     const key = mode === "teams" ? h.team_id : h.user_id;
