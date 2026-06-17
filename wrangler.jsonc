@@ -1,6 +1,6 @@
 {
   "$schema": "node_modules/wrangler/config-schema.json",
-  "name": "cloudctf",
+  "name": "idkctf",
   "main": "src/index.ts",
   "compatibility_date": "2025-05-01",
   "account_id": "947309b8559eadac8c20a351beedf8c6",
@@ -15,7 +15,7 @@
   "d1_databases": [
     {
       "binding": "DB",
-      "database_name": "cloudctf",
+      "database_name": "idkctf",
       "database_id": "36ceb099-a660-4af5-b7b4-94deab814fe9",
       "migrations_dir": "migrations"
     }
@@ -38,6 +38,6 @@
   // The Worker automatically falls back to storing challenge files inline in D1
   // when this binding is absent, so the platform stays 100% on Cloudflare either way.
   // ,"r2_buckets": [
-  //   { "binding": "FILES", "bucket_name": "cloudctf-files" }
+  //   { "binding": "FILES", "bucket_name": "idkctf-files" }
   // ]
 }
