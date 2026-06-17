@@ -1,4 +1,4 @@
-# CloudCTF
+# idkCTF
 
 A full **CTFd-style capture-the-flag platform that runs entirely on Cloudflare** — Workers, D1, KV, and (optionally) R2. No origin server, no containers, no database to babysit.
 
