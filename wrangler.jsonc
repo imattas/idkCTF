@@ -4,11 +4,18 @@
   "main": "src/index.ts",
   "compatibility_date": "2026-07-01",
   "account_id": "947309b8559eadac8c20a351beedf8c6",
+  "workers_dev": false,
   "assets": {
     "directory": "./dist",
     "binding": "ASSETS",
     "not_found_handling": "single-page-application"
   },
+  "routes": [
+    {
+      "pattern": "ctf.idktheflag.sh",
+      "custom_domain": true
+    }
+  ],
   "observability": {
     "enabled": true
   },
