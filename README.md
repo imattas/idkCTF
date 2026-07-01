@@ -20,10 +20,10 @@ A full **CTFd-style capture-the-flag platform that runs entirely on Cloudflare**
 ### Configurability & Integrations
 
 - **Discord webhooks** — configurable solve / first-blood / registration announcements with embeds, mentions, templates, and single-event tests. Manage them from Admin -> Webhooks.
-- **Event & audit logging** — every meaningful action is logged: challenge views, flag submissions (correct/incorrect), solves, first bloods, hint unlocks, logins, registrations, team create/join. Each event records the **IP, country, ASN, AS organization, Cloudflare colo, user-agent**, and a **heuristic VPN/proxy flag** (based on the connecting network's AS org). Browse/filter it in Admin → Logs.
+- **Event & audit logging** — every meaningful action is logged: challenge views, flag submissions (correct/incorrect), solves, first bloods, hint unlocks, logins, registrations, team create/join. Each event records the **IP, country, ASN, AS organization, Cloudflare colo, user-agent**, and a **heuristic VPN/proxy flag** (based on the connecting network's AS org). Browse/filter it in Admin -> Activity -> Logs.
 - **VPN/proxy controls** — optionally **block submissions** from detected VPN/proxy networks; blocked attempts are logged.
-- **Themes & branding** — idktheflag-style defaults, a live **accent color** picker, **logo + favicon upload** (R2 or inline D1), **custom CSS**, and **footer HTML** — all in Admin -> Appearance.
-- **Email (Cloudflare Email Sending)** — welcome emails on registration + admin test sends via the `send_email` Worker binding. Configure the from-address (on an onboarded domain) and toggles in Admin → Settings.
+- **Themes & branding** — idktheflag-style defaults, a live **accent color** picker, **logo + favicon upload** (R2 or inline D1), **custom CSS**, and **footer HTML** — all in Admin -> Site -> Appearance.
+- **Email (Cloudflare Email Sending)** — welcome emails on registration + admin test sends via the `send_email` Worker binding. Configure the from-address (on an onboarded domain) and toggles in Admin -> Site -> Settings.
 - **Access controls** — site lockdown for private build-out, public signup toggle for CTF start, access-code registration, and private/public visibility.
 - **Crawler controls** — `robots.txt` and `X-Robots-Tag` defaults tell search engines and AI crawlers not to index or train on the site.
 - **More site controls** — pause submissions, allow/forbid display-name changes, toggle challenge-view logging, scoreboard freeze, and the rest of the CTFd-style knobs.

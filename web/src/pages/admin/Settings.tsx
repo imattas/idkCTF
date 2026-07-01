@@ -110,7 +110,7 @@ export default function Settings() {
           <label className="flex items-center gap-2 text-sm text-slate-300">
             <input type="checkbox" checked={!!form.registration_open} onChange={(e) => set("registration_open", e.target.checked)} /> Allow public signups
           </label>
-          <p className="text-xs text-slate-500">Turn public signups off once the CTF starts to reduce alt-account abuse on attempt-limited challenges. Use Admin - Users to create accounts manually while locked down.</p>
+          <p className="text-xs text-slate-500">Turn public signups off once the CTF starts to reduce alt-account abuse on attempt-limited challenges. Use Admin &gt; People &gt; Users to create accounts manually while locked down.</p>
           <label className="flex items-center gap-2 text-sm text-slate-300">
             <input type="checkbox" checked={!!form.scoreboard_visible} onChange={(e) => set("scoreboard_visible", e.target.checked)} /> Scoreboard visible to players
           </label>
