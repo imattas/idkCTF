@@ -18,6 +18,8 @@ export interface Env {
   FILES?: R2Bucket; // optional; falls back to D1 inline storage
   EMAIL?: EmailBinding; // optional Cloudflare Email Sending binding
   ACCOUNT_ID?: string;
+  TEAM_FLAG_SECRET?: string;
+  HONEYPOT_SECRET?: string;
 }
 
 export interface SessionUser {
@@ -30,6 +32,10 @@ export interface SessionUser {
   affiliation: string | null;
   country: string | null;
   website: string | null;
+  verified?: number;
+  suspended?: number;
+  prize_disqualified?: number;
+  under_review?: number;
 }
 
 export type Variables = {

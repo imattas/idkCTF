@@ -12,12 +12,13 @@ async function userFromToken(env: Env, req: Request): Promise<SessionUser | null
   if (!token) return null;
   const hash = await sha256hex(token);
   const row = await env.DB.prepare(
-    `SELECT u.id, u.name, u.email, u.role, u.team_id, u.is_captain, u.affiliation, u.country, u.website, u.banned, t.id AS tid
+    `SELECT u.id, u.name, u.email, u.role, u.team_id, u.is_captain, u.affiliation, u.country, u.website,
+            u.banned, u.verified, u.suspended, u.prize_disqualified, u.under_review, t.id AS tid
      FROM api_tokens t JOIN users u ON u.id = t.user_id WHERE t.token_hash = ?`
   )
     .bind(hash)
     .first<SessionUser & { banned: number; tid: number }>();
-  if (!row || row.banned) return null;
+  if (!row || row.banned || !row.verified || row.suspended) return null;
   // Best-effort last_used update.
   await env.DB.prepare("UPDATE api_tokens SET last_used = ? WHERE id = ?")
     .bind(Math.floor(Date.now() / 1000), row.tid)

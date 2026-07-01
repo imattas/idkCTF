@@ -11,6 +11,7 @@ export default function Register() {
   const navigate = useNavigate();
   const [form, setForm] = useState({ name: "", email: "", password: "", affiliation: "", country: "", bracket_id: "", access_code: "" });
   const [err, setErr] = useState("");
+  const [info, setInfo] = useState("");
   const [busy, setBusy] = useState(false);
 
   const { data: brk } = useQuery({ queryKey: ["brackets"], queryFn: () => api.get<{ brackets: Bracket[] }>("/brackets") });
@@ -21,9 +22,14 @@ export default function Register() {
   const submit = async (e: FormEvent) => {
     e.preventDefault();
     setErr("");
+    setInfo("");
     setBusy(true);
     try {
-      await api.post("/auth/register", { ...form, bracket_id: form.bracket_id ? Number(form.bracket_id) : null });
+      const res = await api.post<{ ok: boolean; verification_required?: boolean; message?: string }>("/auth/register", { ...form, bracket_id: form.bracket_id ? Number(form.bracket_id) : null });
+      if (res.verification_required) {
+        setInfo(res.message || "Check your email to verify your account.");
+        return;
+      }
       await refresh();
       navigate("/challenges");
     } catch (e) {
@@ -42,6 +48,7 @@ export default function Register() {
         </div>
       </section>
       {err && <div className="mb-4 rounded-md border border-rose-700 bg-rose-950/50 p-3 text-sm text-rose-300">{err}</div>}
+      {info && <div className="mb-4 rounded-md border border-emerald-700 bg-emerald-950/40 p-3 text-sm text-emerald-300">{info}</div>}
       <form onSubmit={submit} className="card space-y-4">
         <div>
           <label className="label">Username</label>

@@ -8,6 +8,7 @@
     "dev:web": "vite",
     "dev": "wrangler dev",
     "build": "vite build",
+    "test:anti-abuse": "node scripts/run-anti-abuse-tests.mjs",
     "typecheck": "tsc -p tsconfig.json && tsc -p web/tsconfig.json",
     "deploy": "vite build && wrangler deploy",
     "cf-typegen": "wrangler types",

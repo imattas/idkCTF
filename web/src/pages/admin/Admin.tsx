@@ -43,7 +43,7 @@ export default function Admin() {
           <Route path="challenges" element={<AdminChallenges />} />
           <Route path="people" element={<Navigate to="/admin/people/users" replace />} />
           <Route path="people/:tab" element={<AdminPeople />} />
-          <Route path="activity" element={<Navigate to="/admin/activity/submissions" replace />} />
+          <Route path="activity" element={<Navigate to="/admin/activity/cases" replace />} />
           <Route path="activity/:tab" element={<AdminActivity />} />
           <Route path="site" element={<Navigate to="/admin/site/settings" replace />} />
           <Route path="site/:tab" element={<AdminSite />} />
@@ -53,6 +53,8 @@ export default function Admin() {
           <Route path="teams" element={<Navigate to="/admin/people/teams" replace />} />
           <Route path="bans" element={<Navigate to="/admin/people/bans" replace />} />
           <Route path="submissions" element={<Navigate to="/admin/activity/submissions" replace />} />
+          <Route path="cases" element={<Navigate to="/admin/activity/cases" replace />} />
+          <Route path="appeals" element={<Navigate to="/admin/activity/appeals" replace />} />
           <Route path="review" element={<Navigate to="/admin/activity/review" replace />} />
           <Route path="logs" element={<Navigate to="/admin/activity/logs" replace />} />
           <Route path="pages" element={<Navigate to="/admin/site/pages" replace />} />

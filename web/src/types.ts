@@ -21,6 +21,7 @@ export interface PublicConfig {
   custom_head: string;
   has_logo: boolean;
   require_access_code: boolean;
+  email_verification_required: boolean;
 }
 
 export interface Bracket {
@@ -56,6 +57,10 @@ export interface CurrentUser {
   affiliation: string | null;
   country: string | null;
   website: string | null;
+  verified?: number;
+  suspended?: number;
+  prize_disqualified?: number;
+  under_review?: number;
 }
 
 export interface Bootstrap {
@@ -70,6 +75,7 @@ export interface ChallengeSummary {
   name: string;
   category: string;
   type: "static" | "dynamic";
+  difficulty?: string;
   state: string;
   value: number;
   solves: number;
@@ -86,6 +92,7 @@ export interface ChallengeDetail extends ChallengeSummary {
   solvers: { name: string; created_at: number }[];
   requires?: string[];
   attempts: { provided: string; correct: number; created_at: number; by_user: string | null }[];
+  honeypot_token?: string | null;
 }
 
 export interface StandingRow {
@@ -94,4 +101,6 @@ export interface StandingRow {
   name: string;
   score: number;
   solves: number;
+  under_review?: boolean;
+  prize_disqualified?: boolean;
 }

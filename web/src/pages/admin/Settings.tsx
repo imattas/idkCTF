@@ -56,10 +56,30 @@ export default function Settings() {
       access_code: form.access_code || "",
       auto_review: !!form.auto_review,
       review_fast_solve_seconds: Number(form.review_fast_solve_seconds) || 30,
+      anti_abuse_enabled: !!form.anti_abuse_enabled,
+      submit_challenge_limit: Number(form.submit_challenge_limit) || 8,
+      submit_challenge_window: Number(form.submit_challenge_window) || 60,
+      submit_global_limit: Number(form.submit_global_limit) || 30,
+      submit_global_window: Number(form.submit_global_window) || 300,
+      wrong_flag_cooldown_threshold: Number(form.wrong_flag_cooldown_threshold) || 5,
+      wrong_flag_cooldown_seconds: Number(form.wrong_flag_cooldown_seconds) || 120,
+      risk_normal_threshold: Number(form.risk_normal_threshold) || 20,
+      risk_soft_review_threshold: Number(form.risk_soft_review_threshold) || 40,
+      risk_proof_required_threshold: Number(form.risk_proof_required_threshold) || 65,
+      risk_high_review_threshold: Number(form.risk_high_review_threshold) || 80,
+      proof_threshold: Number(form.proof_threshold) || 65,
+      leaderboard_review_enabled: !!form.leaderboard_review_enabled,
+      leaderboard_review_threshold: Number(form.leaderboard_review_threshold) || 80,
+      checklist_enforced: !!form.checklist_enforced,
+      honeypot_enabled: !!form.honeypot_enabled,
+      honeypot_secret: form.honeypot_secret || "",
+      honeypot_risk_weight: Number(form.honeypot_risk_weight) || 35,
+      team_flag_secret: form.team_flag_secret || "",
       email_enabled: !!form.email_enabled,
       email_from: form.email_from || "",
       email_from_name: form.email_from_name || "",
       email_on_register: !!form.email_on_register,
+      email_verification_required: !!form.email_verification_required,
     });
     await refresh();
     setMsg("Settings saved.");
@@ -72,7 +92,7 @@ export default function Settings() {
   };
 
   return (
-    <div className="max-w-2xl">
+    <div className="max-w-4xl">
       <h1 className="mb-6 text-2xl font-bold text-white">Settings</h1>
       {msg && <div className="mb-4 rounded-md border border-emerald-700 bg-emerald-950/40 p-3 text-sm text-emerald-300">{msg}</div>}
 
@@ -161,6 +181,49 @@ export default function Settings() {
         </div>
 
         <div className="card space-y-4">
+          <h2 className="font-semibold text-white">Anti-slop</h2>
+          <div className="grid gap-3 sm:grid-cols-2">
+            <label className="flex items-center gap-2 text-sm text-slate-300">
+              <input type="checkbox" checked={!!form.anti_abuse_enabled} onChange={(e) => set("anti_abuse_enabled", e.target.checked)} /> Enable anti-slop review
+            </label>
+            <label className="flex items-center gap-2 text-sm text-slate-300">
+              <input type="checkbox" checked={!!form.honeypot_enabled} onChange={(e) => set("honeypot_enabled", e.target.checked)} /> Enable AI honeypot signals
+            </label>
+            <label className="flex items-center gap-2 text-sm text-slate-300">
+              <input type="checkbox" checked={!!form.leaderboard_review_enabled} onChange={(e) => set("leaderboard_review_enabled", e.target.checked)} /> Mark high-risk leaderboard rows
+            </label>
+            <label className="flex items-center gap-2 text-sm text-slate-300">
+              <input type="checkbox" checked={!!form.checklist_enforced} onChange={(e) => set("checklist_enforced", e.target.checked)} /> Require challenge checklist before release
+            </label>
+          </div>
+          <div className="rounded-md border border-slate-800 p-3 text-sm text-slate-400">
+            Automatic permanent bans are disabled. Admin review actions handle proof, solve removal, prize disqualification, suspension, and manual bans.
+          </div>
+          <div className="grid gap-4 sm:grid-cols-4">
+            <div><label className="label">User+challenge limit</label><input className="input" type="number" value={form.submit_challenge_limit ?? 8} onChange={(e) => set("submit_challenge_limit", e.target.value)} /></div>
+            <div><label className="label">Challenge window sec</label><input className="input" type="number" value={form.submit_challenge_window ?? 60} onChange={(e) => set("submit_challenge_window", e.target.value)} /></div>
+            <div><label className="label">Global user limit</label><input className="input" type="number" value={form.submit_global_limit ?? 30} onChange={(e) => set("submit_global_limit", e.target.value)} /></div>
+            <div><label className="label">Global window sec</label><input className="input" type="number" value={form.submit_global_window ?? 300} onChange={(e) => set("submit_global_window", e.target.value)} /></div>
+            <div><label className="label">Wrong attempts</label><input className="input" type="number" value={form.wrong_flag_cooldown_threshold ?? 5} onChange={(e) => set("wrong_flag_cooldown_threshold", e.target.value)} /></div>
+            <div><label className="label">Cooldown sec</label><input className="input" type="number" value={form.wrong_flag_cooldown_seconds ?? 120} onChange={(e) => set("wrong_flag_cooldown_seconds", e.target.value)} /></div>
+            <div><label className="label">Fast solve sec</label><input className="input" type="number" value={form.review_fast_solve_seconds ?? 30} onChange={(e) => set("review_fast_solve_seconds", e.target.value)} /></div>
+            <div><label className="label">Honeypot weight</label><input className="input" type="number" value={form.honeypot_risk_weight ?? 35} onChange={(e) => set("honeypot_risk_weight", e.target.value)} /></div>
+          </div>
+          <div className="grid gap-4 sm:grid-cols-6">
+            <div><label className="label">Normal</label><input className="input" type="number" value={form.risk_normal_threshold ?? 20} onChange={(e) => set("risk_normal_threshold", e.target.value)} /></div>
+            <div><label className="label">Soft review</label><input className="input" type="number" value={form.risk_soft_review_threshold ?? 40} onChange={(e) => set("risk_soft_review_threshold", e.target.value)} /></div>
+            <div><label className="label">Proof review</label><input className="input" type="number" value={form.risk_proof_required_threshold ?? 65} onChange={(e) => set("risk_proof_required_threshold", e.target.value)} /></div>
+            <div><label className="label">Proof request</label><input className="input" type="number" value={form.proof_threshold ?? 65} onChange={(e) => set("proof_threshold", e.target.value)} /></div>
+            <div><label className="label">High risk</label><input className="input" type="number" value={form.risk_high_review_threshold ?? 80} onChange={(e) => set("risk_high_review_threshold", e.target.value)} /></div>
+            <div><label className="label">Leaderboard review</label><input className="input" type="number" value={form.leaderboard_review_threshold ?? 80} onChange={(e) => set("leaderboard_review_threshold", e.target.value)} /></div>
+          </div>
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div><label className="label">Team flag secret</label><input className="input mono" type="password" value={form.team_flag_secret || ""} onChange={(e) => set("team_flag_secret", e.target.value)} /></div>
+            <div><label className="label">Honeypot secret</label><input className="input mono" type="password" value={form.honeypot_secret || ""} onChange={(e) => set("honeypot_secret", e.target.value)} /></div>
+          </div>
+        </div>
+
+        <div className="card space-y-4">
           <h2 className="font-semibold text-white">Email (Cloudflare Email Sending)</h2>
           <label className="flex items-center gap-2 text-sm text-slate-300">
             <input type="checkbox" checked={!!form.email_enabled} onChange={(e) => set("email_enabled", e.target.checked)} /> Enable email sending
@@ -171,6 +234,9 @@ export default function Settings() {
           </div>
           <label className="flex items-center gap-2 text-sm text-slate-300">
             <input type="checkbox" checked={!!form.email_on_register} onChange={(e) => set("email_on_register", e.target.checked)} /> Send a welcome email on registration
+          </label>
+          <label className="flex items-center gap-2 text-sm text-slate-300">
+            <input type="checkbox" checked={!!form.email_verification_required} onChange={(e) => set("email_verification_required", e.target.checked)} /> Require email verification before login
           </label>
           <div className="flex items-center gap-3">
             <button className="btn-ghost" type="button" onClick={sendTest}>Send test email to myself</button>

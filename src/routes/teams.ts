@@ -5,6 +5,7 @@ import { requireAuth } from "../middleware/auth";
 import { inviteCode } from "../lib/auth";
 import { nowSeconds } from "../lib/validate";
 import { logEvent, EVENTS } from "../lib/events";
+import { ABUSE_EVENTS, logAbuseEvent } from "../lib/antiAbuse";
 
 const app = new Hono<{ Bindings: Env; Variables: Variables }>();
 app.use("*", requireAuth);
@@ -35,6 +36,7 @@ app.post("/create", async (c) => {
   if (!(await teamModeOnly(c))) return c.json({ error: "Not in team mode" }, 400);
   const u = c.var.user!;
   if (u.role === "admin") return c.json({ error: "Admin accounts cannot join the competition as players" }, 403);
+  if (u.suspended) return c.json({ error: "Account suspended pending admin review" }, 403);
   if (u.team_id) return c.json({ error: "You are already on a team" }, 400);
   const body = await c.req.json().catch(() => ({}));
   const name = String(body.name || "").trim();
@@ -55,6 +57,7 @@ app.post("/create", async (c) => {
     .bind(teamId, u.id)
     .run();
   await logEvent(c, EVENTS.TEAM_CREATE, { team_id: teamId, message: name });
+  await logAbuseEvent(c, ABUSE_EVENTS.TEAM_JOINED, { team_id: teamId, message: "created team" });
   return c.json({ ok: true, team_id: teamId, invite_code: code });
 });
 
@@ -62,15 +65,17 @@ app.post("/join", async (c) => {
   if (!(await teamModeOnly(c))) return c.json({ error: "Not in team mode" }, 400);
   const u = c.var.user!;
   if (u.role === "admin") return c.json({ error: "Admin accounts cannot join the competition as players" }, 403);
+  if (u.suspended) return c.json({ error: "Account suspended pending admin review" }, 403);
   if (u.team_id) return c.json({ error: "You are already on a team" }, 400);
   const body = await c.req.json().catch(() => ({}));
   const code = String(body.invite_code || "").trim().toUpperCase();
   if (!code) return c.json({ error: "Invite code required" }, 400);
 
-  const team = await c.env.DB.prepare("SELECT id, banned FROM teams WHERE invite_code = ?")
+  const team = await c.env.DB.prepare("SELECT id, banned, suspended FROM teams WHERE invite_code = ?")
     .bind(code)
-    .first<{ id: number; banned: number }>();
+    .first<{ id: number; banned: number; suspended: number }>();
   if (!team || team.banned) return c.json({ error: "Invalid invite code" }, 404);
+  if (team.suspended) return c.json({ error: "Team is suspended pending admin review" }, 403);
 
   const cfg = await getConfig(c.env);
   if (cfg.team_size_limit > 0) {
@@ -85,6 +90,7 @@ app.post("/join", async (c) => {
     .bind(team.id, u.id)
     .run();
   await logEvent(c, EVENTS.TEAM_JOIN, { team_id: team.id });
+  await logAbuseEvent(c, ABUSE_EVENTS.TEAM_JOINED, { team_id: team.id, message: "joined team" });
   return c.json({ ok: true, team_id: team.id });
 });
 
@@ -104,6 +110,7 @@ app.post("/leave", async (c) => {
   await c.env.DB.prepare("UPDATE users SET team_id = NULL, is_captain = 0 WHERE id = ?")
     .bind(u.id)
     .run();
+  await logAbuseEvent(c, ABUSE_EVENTS.TEAM_LEFT, { team_id: u.team_id, message: "left team" });
   return c.json({ ok: true });
 });
 

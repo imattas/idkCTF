@@ -3,6 +3,7 @@ import type { Env, Variables } from "../types";
 import { getConfig } from "../lib/config";
 import { logEvent, EVENTS } from "../lib/events";
 import { canAccessChallenge } from "../lib/access";
+import { ABUSE_EVENTS, logAbuseEvent } from "../lib/antiAbuse";
 
 const app = new Hono<{ Bindings: Env; Variables: Variables }>();
 
@@ -31,6 +32,11 @@ app.get("/:id", async (c) => {
 
   if (c.var.user) {
     await logEvent(c, EVENTS.DOWNLOAD, { challenge_id: file.challenge_id, message: file.name });
+    await logAbuseEvent(c, ABUSE_EVENTS.FILE_DOWNLOADED, {
+      challenge_id: file.challenge_id,
+      message: file.name,
+      metadata: { file_id: id, size: file.size },
+    });
   }
 
   const headers: Record<string, string> = {

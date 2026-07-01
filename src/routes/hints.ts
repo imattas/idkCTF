@@ -5,6 +5,7 @@ import { requireAuth } from "../middleware/auth";
 import { nowSeconds } from "../lib/validate";
 import { logEvent, EVENTS } from "../lib/events";
 import { canAccessChallenge } from "../lib/access";
+import { ABUSE_EVENTS, logAbuseEvent } from "../lib/antiAbuse";
 
 const app = new Hono<{ Bindings: Env; Variables: Variables }>();
 app.use("*", requireAuth);
@@ -44,6 +45,7 @@ app.post("/:id/unlock", async (c) => {
     const content = await c.env.DB.prepare("SELECT content FROM hints WHERE id = ?")
       .bind(hintId)
       .first<{ content: string }>();
+    await logAbuseEvent(c, ABUSE_EVENTS.HINT_VIEWED, { challenge_id: hint.challenge_id, message: "hint viewed", metadata: { hint_id: hintId, existing: true } });
     return c.json({ ok: true, content: content?.content });
   }
 
@@ -57,6 +59,7 @@ app.post("/:id/unlock", async (c) => {
     .bind(hintId)
     .first<{ content: string }>();
   await logEvent(c, EVENTS.HINT_UNLOCK, { metadata: { hint_id: hintId, cost: hint.cost } });
+  await logAbuseEvent(c, ABUSE_EVENTS.HINT_VIEWED, { challenge_id: hint.challenge_id, message: "hint viewed", metadata: { hint_id: hintId, cost: hint.cost } });
   return c.json({ ok: true, content: content?.content });
 });
 

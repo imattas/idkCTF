@@ -8,6 +8,8 @@ export interface StandingEntry {
   solve_count: number;
   last_event: number; // epoch seconds of most recent scoring event (for tiebreak)
   hidden: number;
+  under_review: number;
+  prize_disqualified: number;
 }
 
 interface SolveRow {
@@ -66,13 +68,22 @@ export async function computeStandings(
 
   const accounts = new Map<number, StandingEntry>();
   const accountSql = mode === "teams"
-    ? `SELECT id, name, hidden FROM ${table} WHERE banned = 0${bracketClause}
+    ? `SELECT id, name, hidden, under_review, prize_disqualified FROM ${table} WHERE banned = 0${bracketClause}
        AND NOT EXISTS (SELECT 1 FROM users admin_user WHERE admin_user.team_id = teams.id AND admin_user.role = 'admin')`
-    : `SELECT id, name, hidden FROM ${table} WHERE banned = 0 AND role = 'user'${bracketClause}`;
+    : `SELECT id, name, hidden, under_review, prize_disqualified FROM ${table} WHERE banned = 0 AND role = 'user'${bracketClause}`;
   const stmt = env.DB.prepare(accountSql);
-  const rows = await (bracketId ? stmt.bind(bracketId) : stmt).all<{ id: number; name: string; hidden: number }>();
+  const rows = await (bracketId ? stmt.bind(bracketId) : stmt).all<{ id: number; name: string; hidden: number; under_review: number; prize_disqualified: number }>();
   for (const a of rows.results)
-    accounts.set(a.id, { account_id: a.id, name: a.name, score: 0, solve_count: 0, last_event: 0, hidden: a.hidden });
+    accounts.set(a.id, {
+      account_id: a.id,
+      name: a.name,
+      score: 0,
+      solve_count: 0,
+      last_event: 0,
+      hidden: a.hidden,
+      under_review: a.under_review,
+      prize_disqualified: a.prize_disqualified,
+    });
 
   const keyOf = (r: { user_id: number; team_id: number | null }) =>
     mode === "teams" ? r.team_id : r.user_id;

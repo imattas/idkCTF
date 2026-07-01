@@ -8,6 +8,7 @@ import { COUNTRIES } from "../../countries";
 interface AdminUser {
   id: number; name: string; email: string; role: string;
   team_name: string | null; hidden: number; banned: number;
+  verified: number; suspended: number; prize_disqualified: number; under_review: number;
 }
 
 export default function AdminUsers() {
@@ -52,6 +53,10 @@ export default function AdminUsers() {
                 <td className="px-4 py-3 space-x-1">
                   {u.hidden ? <span className="badge border-slate-600 text-slate-400">hidden</span> : null}
                   {u.banned ? <span className="badge border-rose-700 text-rose-400">banned</span> : null}
+                  {u.suspended ? <span className="badge border-amber-700 text-amber-400">suspended</span> : null}
+                  {u.under_review ? <span className="badge border-orange-700 text-orange-400">review</span> : null}
+                  {u.prize_disqualified ? <span className="badge border-fuchsia-700 text-fuchsia-400">prize dq</span> : null}
+                  {!u.verified ? <span className="badge border-sky-700 text-sky-400">unverified</span> : null}
                 </td>
                 <td className="px-4 py-3 text-right whitespace-nowrap">
                   <button className="btn-ghost text-xs mr-1" onClick={() => setManageId(u.id)}>Manage</button>
@@ -157,6 +162,10 @@ function UserModal({ id, self, onClose, onSaved }: { id: number; self: boolean; 
         name: form.name, email: form.email, affiliation: form.affiliation, country: form.country, website: form.website,
         role: self ? undefined : form.role, hidden: form.hidden ? 1 : 0,
         banned: self ? undefined : (form.banned ? 1 : 0),
+        verified: self ? undefined : (form.verified ? 1 : 0),
+        suspended: self ? undefined : (form.suspended ? 1 : 0),
+        prize_disqualified: form.prize_disqualified ? 1 : 0,
+        under_review: form.under_review ? 1 : 0,
         bracket_id: form.bracket_id || null,
       };
       if (pw) payload.password = pw;
@@ -214,6 +223,10 @@ function UserModal({ id, self, onClose, onSaved }: { id: number; self: boolean; 
           </div>
           <label className="flex items-center gap-2 text-sm text-slate-300 mt-5"><input type="checkbox" checked={!!form.hidden} onChange={(e) => set("hidden", e.target.checked)} /> Hidden</label>
           <label className="flex items-center gap-2 text-sm text-slate-300 mt-5"><input type="checkbox" disabled={self} checked={!!form.banned} onChange={(e) => set("banned", e.target.checked)} /> Banned</label>
+          <label className="flex items-center gap-2 text-sm text-slate-300 mt-5"><input type="checkbox" disabled={self} checked={!!form.suspended} onChange={(e) => set("suspended", e.target.checked)} /> Suspended</label>
+          <label className="flex items-center gap-2 text-sm text-slate-300 mt-5"><input type="checkbox" checked={!!form.under_review} onChange={(e) => set("under_review", e.target.checked)} /> Under review</label>
+          <label className="flex items-center gap-2 text-sm text-slate-300 mt-5"><input type="checkbox" checked={!!form.prize_disqualified} onChange={(e) => set("prize_disqualified", e.target.checked)} /> Prize DQ</label>
+          <label className="flex items-center gap-2 text-sm text-slate-300 mt-5"><input type="checkbox" disabled={self} checked={!!form.verified} onChange={(e) => set("verified", e.target.checked)} /> Verified</label>
         </div>
 
         <div className="flex items-end gap-3">

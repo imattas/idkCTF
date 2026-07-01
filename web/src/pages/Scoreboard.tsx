@@ -83,6 +83,10 @@ export default function Scoreboard() {
             <Link key={s.account_id} to={`/${mode === "teams" ? "teams" : "users"}/${s.account_id}`} className="card transition hover:border-[var(--accent-line)] hover:bg-[var(--surface-2)]">
               <div className="stat-value">#{s.rank}</div>
               <div className="mt-2 truncate text-lg font-semibold text-white">{s.name}</div>
+              <div className="mt-2 flex flex-wrap gap-1">
+                {s.under_review && <span className="badge border-amber-700 text-amber-300">under review</span>}
+                {s.prize_disqualified && <span className="badge border-rose-700 text-rose-300">prize dq</span>}
+              </div>
               <div className="stat-label">{s.score} pts / {s.solves} solves</div>
             </Link>
           ))}
@@ -142,6 +146,8 @@ export default function Scoreboard() {
                 <td className="px-4 py-3 mono text-[var(--fg-faint)]">{s.rank}</td>
                 <td className="px-4 py-3 font-medium text-white">
                   <Link to={`/${mode === "teams" ? "teams" : "users"}/${s.account_id}`} className="hover:text-[var(--accent-strong)]">{s.name}</Link>
+                  {s.under_review && <span className="badge ml-2 border-amber-700 text-amber-300">under review</span>}
+                  {s.prize_disqualified && <span className="badge ml-2 border-rose-700 text-rose-300">prize dq</span>}
                 </td>
                 <td className="px-4 py-3 text-right text-slate-400">{s.solves}</td>
                 <td className="px-4 py-3 text-right text-[var(--accent-strong)] mono">{s.score}</td>

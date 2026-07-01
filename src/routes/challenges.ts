@@ -4,6 +4,7 @@ import { getConfig, competitionState } from "../lib/config";
 import { challengeValues } from "../lib/standings";
 import { nowSeconds } from "../lib/validate";
 import { logEvent, EVENTS } from "../lib/events";
+import { ABUSE_EVENTS, honeypotToken, logAbuseEvent } from "../lib/antiAbuse";
 
 const app = new Hono<{ Bindings: Env; Variables: Variables }>();
 
@@ -50,7 +51,7 @@ app.get("/", async (c) => {
   // manage hidden/draft challenges in the Admin panel. This keeps the board
   // identical to what players actually see.
   const rows = await c.env.DB.prepare(
-    `SELECT id, name, category, type, value, initial, minimum, decay, state, sort_order, prerequisites FROM challenges WHERE state = 'visible' ORDER BY category, sort_order, id`
+    `SELECT id, name, category, type, difficulty, value, initial, minimum, decay, state, sort_order, prerequisites FROM challenges WHERE state = 'visible' ORDER BY category, sort_order, id`
   ).all<any>();
   const values = await challengeValues(c.env);
   const counts = await c.env.DB.prepare(
@@ -72,6 +73,7 @@ app.get("/", async (c) => {
       name: r.name,
       category: r.category,
       type: r.type,
+      difficulty: r.difficulty || "medium",
       state: r.state,
       value: values.get(r.id) ?? r.value,
       solves: countMap.get(r.id) ?? 0,
@@ -153,13 +155,18 @@ app.get("/:id", async (c) => {
   if (cfg.log_challenge_views && c.var.user && !isAdmin) {
     await logEvent(c, EVENTS.CHALLENGE_VIEW, { challenge_id: id, message: ch.name });
   }
+  let honeypot: string | null = null;
+  if (cfg.anti_abuse_enabled && cfg.honeypot_enabled && c.var.user && !isAdmin && acct != null) {
+    honeypot = await honeypotToken(acct, id, cfg.honeypot_secret || c.env.HONEYPOT_SECRET || cfg.team_flag_secret || c.env.TEAM_FLAG_SECRET || "");
+    await logAbuseEvent(c, ABUSE_EVENTS.CHALLENGE_OPENED, { challenge_id: id, message: ch.name });
+  }
 
   return c.json({
     challenge: {
       id: ch.id, name: ch.name, category: ch.category, description: ch.description,
-      connection_info: ch.connection_info, type: ch.type, state: ch.state, max_attempts: ch.max_attempts,
+      connection_info: ch.connection_info, type: ch.type, difficulty: ch.difficulty || "medium", state: ch.state, max_attempts: ch.max_attempts,
       value: values.get(ch.id) ?? ch.value, solves: countRow?.n ?? 0, solved, locked: false,
-      files: files.results, hints, solvers: solvers.results, attempts,
+      files: files.results, hints, solvers: solvers.results, attempts, honeypot_token: honeypot,
     },
   });
 });

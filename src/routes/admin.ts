@@ -8,6 +8,13 @@ import { deliverDiscord, listWebhooks, getWebhook, createWebhook, updateWebhook,
 import { sendEmail } from "../lib/email";
 import { logEvent, EVENTS } from "../lib/events";
 import { listBans, addBan, removeBan } from "../lib/bans";
+import {
+  ABUSE_EVENTS,
+  checklistComplete,
+  logAbuseEvent,
+  logAdminReviewAction,
+  normalizeChecklist,
+} from "../lib/antiAbuse";
 
 const app = new Hono<{ Bindings: Env; Variables: Variables }>();
 app.use("*", requireAdmin);
@@ -26,9 +33,26 @@ function bytesToB64(bytes: Uint8Array): string {
 
 async function readChallengeReleaseStatus(env: Env, id: number) {
   return env.DB.prepare(
-    `SELECT ch.name, ch.state, (SELECT COUNT(*) FROM flags f WHERE f.challenge_id = ch.id) AS flag_count
+    `SELECT ch.name, ch.state, ch.generated_team_flags, ch.quality_checklist,
+            (SELECT COUNT(*) FROM flags f WHERE f.challenge_id = ch.id) AS flag_count
      FROM challenges ch WHERE ch.id = ?`
-  ).bind(id).first<{ name: string; state: string; flag_count: number }>();
+  ).bind(id).first<{ name: string; state: string; generated_team_flags: number; quality_checklist: string | null; flag_count: number }>();
+}
+
+async function validateRelease(env: Env, id: number) {
+  const cfg = await getConfig(env);
+  const release = await readChallengeReleaseStatus(env, id);
+  if (!release) return { ok: false as const, status: 404, error: "Not found" };
+  if ((release.flag_count ?? 0) < 1 && !release.generated_team_flags) {
+    return { ok: false as const, status: 400, error: "Add a static flag or enable generated team flags before releasing this challenge." };
+  }
+  if (release.generated_team_flags && !cfg.team_flag_secret && !env.TEAM_FLAG_SECRET) {
+    return { ok: false as const, status: 400, error: "Set TEAM_FLAG_SECRET or the team flag secret in Settings before releasing generated-flag challenges." };
+  }
+  if (cfg.checklist_enforced && !checklistComplete(release.quality_checklist)) {
+    return { ok: false as const, status: 400, error: "Complete the challenge quality checklist before releasing this challenge." };
+  }
+  return { ok: true as const, release };
 }
 
 /* ---------------- Config & stats ---------------- */
@@ -47,7 +71,13 @@ app.patch("/config", async (c) => {
     "paused", "block_vpn", "block_vpn_signup", "allow_name_change", "log_challenge_views",
     "require_access_code", "access_code", "auto_review", "review_fast_solve_seconds",
     "theme", "accent", "custom_css", "footer_html", "home_content", "home_format", "custom_head",
-    "email_enabled", "email_from", "email_from_name", "email_on_register",
+    "anti_abuse_enabled", "submit_challenge_limit", "submit_challenge_window",
+    "submit_global_limit", "submit_global_window", "wrong_flag_cooldown_threshold",
+    "wrong_flag_cooldown_seconds", "risk_normal_threshold", "risk_soft_review_threshold",
+    "risk_proof_required_threshold", "risk_high_review_threshold", "proof_threshold",
+    "leaderboard_review_enabled", "leaderboard_review_threshold", "checklist_enforced",
+    "honeypot_enabled", "honeypot_secret", "honeypot_risk_weight", "team_flag_secret",
+    "email_enabled", "email_from", "email_from_name", "email_on_register", "email_verification_required",
   ];
   const updates: any = {};
   for (const k of allowed) if (k in body) updates[k] = body[k];
@@ -58,14 +88,44 @@ app.patch("/config", async (c) => {
 
 app.get("/stats", async (c) => {
   const q = (sql: string) => c.env.DB.prepare(sql).first<{ n: number }>();
-  const [users, teams, challenges, solves, submissions, correct] = await Promise.all([
+  const since24h = nowSeconds() - 24 * 60 * 60;
+  const [users, teams, challenges, solves, submissions, correct, openCases, highCases, appeals, honeypot] = await Promise.all([
     q("SELECT COUNT(*) AS n FROM users"),
     q("SELECT COUNT(*) AS n FROM teams"),
     q("SELECT COUNT(*) AS n FROM challenges"),
     q("SELECT COUNT(*) AS n FROM solves"),
     q("SELECT COUNT(*) AS n FROM submissions"),
     q("SELECT COUNT(*) AS n FROM submissions WHERE correct = 1"),
+    q("SELECT COUNT(*) AS n FROM review_cases WHERE status NOT IN ('clean','resolved','rejected')"),
+    q("SELECT COUNT(*) AS n FROM review_cases WHERE status NOT IN ('clean','resolved','rejected') AND risk_score >= 80"),
+    q("SELECT COUNT(*) AS n FROM appeals WHERE status = 'open'"),
+    q("SELECT COUNT(*) AS n FROM anti_abuse_events WHERE type = 'ai_honeypot.triggered'"),
   ]);
+  const traffic = await c.env.DB.prepare(
+    `SELECT ((created_at / 3600) * 3600) AS bucket, COUNT(*) AS events,
+            SUM(CASE WHEN type = ? THEN 1 ELSE 0 END) AS opens,
+            SUM(CASE WHEN type = ? THEN 1 ELSE 0 END) AS submissions,
+            SUM(CASE WHEN type = ? THEN 1 ELSE 0 END) AS downloads
+     FROM anti_abuse_events
+     WHERE created_at >= ?
+     GROUP BY bucket
+     ORDER BY bucket`
+  ).bind(ABUSE_EVENTS.CHALLENGE_OPENED, ABUSE_EVENTS.FLAG_SUBMITTED, ABUSE_EVENTS.FILE_DOWNLOADED, since24h).all();
+  const activeTeams = await c.env.DB.prepare(
+    `SELECT COALESCE(t.name, u.name) AS name,
+            COUNT(DISTINCT s.id) AS submissions,
+            SUM(CASE WHEN s.correct = 1 THEN 1 ELSE 0 END) AS correct
+     FROM submissions s
+     JOIN users u ON u.id = s.user_id
+     LEFT JOIN teams t ON t.id = s.team_id
+     WHERE s.created_at >= ? AND u.role = 'user'
+     GROUP BY COALESCE(s.team_id, s.user_id)
+     ORDER BY submissions DESC
+     LIMIT 10`
+  ).bind(since24h).all();
+  const reviewByStatus = await c.env.DB.prepare(
+    "SELECT status, COUNT(*) AS n FROM review_cases GROUP BY status ORDER BY n DESC"
+  ).all();
   return c.json({
     users: users?.n ?? 0,
     teams: teams?.n ?? 0,
@@ -73,6 +133,13 @@ app.get("/stats", async (c) => {
     solves: solves?.n ?? 0,
     submissions: submissions?.n ?? 0,
     correct: correct?.n ?? 0,
+    open_cases: openCases?.n ?? 0,
+    high_risk_cases: highCases?.n ?? 0,
+    open_appeals: appeals?.n ?? 0,
+    honeypot_hits: honeypot?.n ?? 0,
+    traffic: traffic.results,
+    active_accounts: activeTeams.results,
+    review_by_status: reviewByStatus.results,
   });
 });
 
@@ -106,8 +173,10 @@ app.post("/challenges", async (c) => {
     return c.json({ error: "Create the challenge hidden, add at least one flag, then release it." }, 400);
   }
   const res = await c.env.DB.prepare(
-    `INSERT INTO challenges (name, category, description, connection_info, type, state, value, initial, minimum, decay, max_attempts, sort_order, prerequisites, created_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    `INSERT INTO challenges
+     (name, category, description, connection_info, type, state, value, initial, minimum, decay,
+      max_attempts, sort_order, prerequisites, difficulty, generated_team_flags, quality_checklist, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
   )
     .bind(
       b.name, b.category || "misc", b.description || "", b.connection_info || null,
@@ -115,6 +184,9 @@ app.post("/challenges", async (c) => {
       Number(b.value ?? b.initial ?? 100), b.initial ?? null, b.minimum ?? null, b.decay ?? null,
       Number(b.max_attempts ?? 0), Number(b.sort_order ?? 0),
       Array.isArray(b.prerequisites) && b.prerequisites.length ? JSON.stringify(b.prerequisites) : null,
+      ["easy", "medium", "hard", "insane"].includes(b.difficulty) ? b.difficulty : "medium",
+      b.generated_team_flags ? 1 : 0,
+      normalizeChecklist(b.quality_checklist),
       nowSeconds()
     )
     .run();
@@ -128,14 +200,16 @@ app.patch("/challenges/:id", async (c) => {
   if ("state" in b) {
     b.state = b.state === "visible" ? "visible" : "hidden";
     if (b.state === "visible") {
-      const release = await readChallengeReleaseStatus(c.env, id);
-      if (!release) return c.json({ error: "Not found" }, 404);
-      if ((release.flag_count ?? 0) < 1) return c.json({ error: "Add at least one flag before releasing this challenge." }, 400);
+      const release = await validateRelease(c.env, id);
+      if (!release.ok) return c.json({ error: release.error }, release.status as any);
     }
   }
+  if ("difficulty" in b && !["easy", "medium", "hard", "insane"].includes(b.difficulty)) b.difficulty = "medium";
+  if ("generated_team_flags" in b) b.generated_team_flags = b.generated_team_flags ? 1 : 0;
   const cols = [
     "name", "category", "description", "connection_info", "type", "state",
     "value", "initial", "minimum", "decay", "max_attempts", "sort_order",
+    "difficulty", "generated_team_flags",
   ];
   const sets: string[] = [];
   const binds: any[] = [];
@@ -143,6 +217,10 @@ app.patch("/challenges/:id", async (c) => {
   if ("prerequisites" in b) {
     sets.push("prerequisites = ?");
     binds.push(Array.isArray(b.prerequisites) && b.prerequisites.length ? JSON.stringify(b.prerequisites) : null);
+  }
+  if ("quality_checklist" in b) {
+    sets.push("quality_checklist = ?");
+    binds.push(normalizeChecklist(b.quality_checklist));
   }
   if (!sets.length) return c.json({ ok: true });
   binds.push(id);
@@ -154,11 +232,10 @@ app.patch("/challenges/:id", async (c) => {
 
 app.post("/challenges/:id/release", async (c) => {
   const id = Number(c.req.param("id"));
-  const release = await readChallengeReleaseStatus(c.env, id);
-  if (!release) return c.json({ error: "Not found" }, 404);
-  if ((release.flag_count ?? 0) < 1) return c.json({ error: "Add at least one flag before releasing this challenge." }, 400);
+  const release = await validateRelease(c.env, id);
+  if (!release.ok) return c.json({ error: release.error }, release.status as any);
   await c.env.DB.prepare("UPDATE challenges SET state = 'visible' WHERE id = ?").bind(id).run();
-  await logEvent(c, EVENTS.CHALLENGE_UPDATE, { challenge_id: id, message: `Released ${release.name}` });
+  await logEvent(c, EVENTS.CHALLENGE_UPDATE, { challenge_id: id, message: `Released ${release.release.name}` });
   return c.json({ ok: true });
 });
 
@@ -186,11 +263,14 @@ app.post("/challenges/:id/clone", async (c) => {
   if (!src) return c.json({ error: "Not found" }, 404);
   const now = nowSeconds();
   const res = await c.env.DB.prepare(
-    `INSERT INTO challenges (name, category, description, connection_info, type, state, value, initial, minimum, decay, max_attempts, sort_order, created_at)
-     VALUES (?, ?, ?, ?, ?, 'hidden', ?, ?, ?, ?, ?, ?, ?)`
+    `INSERT INTO challenges
+     (name, category, description, connection_info, type, state, value, initial, minimum, decay,
+      max_attempts, sort_order, prerequisites, difficulty, generated_team_flags, quality_checklist, created_at)
+     VALUES (?, ?, ?, ?, ?, 'hidden', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
   )
     .bind(`${src.name} (copy)`, src.category, src.description, src.connection_info, src.type,
-      src.value, src.initial, src.minimum, src.decay, src.max_attempts, src.sort_order, now)
+      src.value, src.initial, src.minimum, src.decay, src.max_attempts, src.sort_order,
+      src.prerequisites, src.difficulty || "medium", src.generated_team_flags ? 1 : 0, src.quality_checklist || null, now)
     .run();
   const newId = res.meta.last_row_id as number;
 
@@ -300,7 +380,8 @@ app.delete("/files/:id", async (c) => {
 
 app.get("/users", async (c) => {
   const rows = await c.env.DB.prepare(
-    `SELECT u.id, u.name, u.email, u.role, u.team_id, u.is_captain, u.hidden, u.banned, u.created_at,
+    `SELECT u.id, u.name, u.email, u.role, u.team_id, u.is_captain, u.hidden, u.banned,
+            u.verified, u.suspended, u.prize_disqualified, u.under_review, u.created_at,
             t.name AS team_name FROM users u LEFT JOIN teams t ON t.id = u.team_id ORDER BY u.id`
   ).all();
   return c.json({ users: rows.results });
@@ -320,8 +401,8 @@ app.post("/users", async (c) => {
 
   const role = b.role === "admin" ? "admin" : "user";
   const res = await c.env.DB.prepare(
-    `INSERT INTO users (name, email, password_hash, role, hidden, affiliation, country, website, bracket_id, created_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    `INSERT INTO users (name, email, password_hash, role, verified, hidden, affiliation, country, website, bracket_id, created_at)
+     VALUES (?, ?, ?, ?, 1, ?, ?, ?, ?, ?, ?)`
   )
     .bind(
       name,
@@ -348,8 +429,13 @@ app.patch("/users/:id", async (c) => {
   if (id === c.var.user!.id) {
     if ("role" in b && b.role !== "admin") return c.json({ error: "You can't remove your own admin role" }, 400);
     if ("banned" in b && b.banned) return c.json({ error: "You can't ban yourself" }, 400);
+    if ("suspended" in b && b.suspended) return c.json({ error: "You can't suspend yourself" }, 400);
+    if ("verified" in b && !b.verified) return c.json({ error: "You can't unverify yourself" }, 400);
   }
-  const cols = ["role", "hidden", "banned", "name", "email", "affiliation", "country", "website", "bracket_id", "team_id", "is_captain"];
+  const cols = [
+    "role", "hidden", "banned", "verified", "suspended", "prize_disqualified", "under_review",
+    "name", "email", "affiliation", "country", "website", "bracket_id", "team_id", "is_captain",
+  ];
   const sets: string[] = [];
   const binds: any[] = [];
   if (b.role === "admin") b.hidden = 1;
@@ -364,7 +450,21 @@ app.patch("/users/:id", async (c) => {
   await c.env.DB.prepare(`UPDATE users SET ${sets.join(", ")} WHERE id = ?`).bind(...binds).run();
   // Log notable changes (ban, role) explicitly.
   if ("banned" in b) await logEvent(c, EVENTS.ADMIN_ACTION, { message: `${b.banned ? "Banned" : "Unbanned"} user #${id}` });
+  else if ("suspended" in b) await logEvent(c, EVENTS.ADMIN_ACTION, { message: `${b.suspended ? "Suspended" : "Unsuspended"} user #${id}` });
   else if ("role" in b) await logEvent(c, EVENTS.ADMIN_ACTION, { message: `Set user #${id} role to ${b.role}` });
+  if ("banned" in b || "suspended" in b || "prize_disqualified" in b || "under_review" in b) {
+    await logAbuseEvent(c, ABUSE_EVENTS.ADMIN_ACTION, {
+      user_id: id,
+      team_id: null,
+      message: "Updated user enforcement flags",
+      metadata: {
+        banned: b.banned,
+        suspended: b.suspended,
+        prize_disqualified: b.prize_disqualified,
+        under_review: b.under_review,
+      },
+    });
+  }
   return c.json({ ok: true });
 });
 
@@ -431,13 +531,26 @@ app.get("/teams", async (c) => {
 app.patch("/teams/:id", async (c) => {
   const id = Number(c.req.param("id"));
   const b = await c.req.json().catch(() => ({}));
-  const cols = ["name", "hidden", "banned", "bracket_id", "affiliation", "country", "website"];
+  const cols = ["name", "hidden", "banned", "suspended", "prize_disqualified", "under_review", "bracket_id", "affiliation", "country", "website"];
   const sets: string[] = [];
   const binds: any[] = [];
   for (const col of cols) if (col in b) { sets.push(`${col} = ?`); binds.push(b[col] === "" ? null : b[col]); }
   if (!sets.length) return c.json({ ok: true });
   binds.push(id);
   await c.env.DB.prepare(`UPDATE teams SET ${sets.join(", ")} WHERE id = ?`).bind(...binds).run();
+  if ("banned" in b || "suspended" in b || "prize_disqualified" in b || "under_review" in b) {
+    await logAbuseEvent(c, ABUSE_EVENTS.ADMIN_ACTION, {
+      user_id: null,
+      team_id: id,
+      message: "Updated team enforcement flags",
+      metadata: {
+        banned: b.banned,
+        suspended: b.suspended,
+        prize_disqualified: b.prize_disqualified,
+        under_review: b.under_review,
+      },
+    });
+  }
   return c.json({ ok: true });
 });
 
@@ -631,6 +744,238 @@ app.post("/review-flags", async (c) => {
   await c.env.DB.prepare(
     "INSERT OR IGNORE INTO review_flags (user_id, team_id, challenge_id, type, detail, created_at) VALUES (?, ?, ?, 'manual', ?, ?)"
   ).bind(Number(b.user_id), b.team_id ?? null, b.challenge_id ?? null, String(b.detail || "Manually flagged"), nowSeconds()).run();
+  return c.json({ ok: true });
+});
+
+/* ---------------- Anti-slop review cases ---------------- */
+
+function appendNote(existing: string | null | undefined, admin: string, note: string): string {
+  const trimmed = note.trim();
+  if (!trimmed) return existing || "";
+  const stamp = new Date().toISOString();
+  return `${existing || ""}${existing ? "\n\n" : ""}[${stamp}] ${admin}: ${trimmed}`;
+}
+
+async function getReviewCase(env: Env, id: number) {
+  return env.DB.prepare("SELECT * FROM review_cases WHERE id = ?").bind(id).first<any>();
+}
+
+app.get("/review-cases", async (c) => {
+  const clauses: string[] = [];
+  const binds: any[] = [];
+  const status = c.req.query("status");
+  const minRisk = c.req.query("min_risk");
+  const from = c.req.query("from");
+  const to = c.req.query("to");
+  for (const [query, col] of [
+    ["challenge_id", "rc.challenge_id"],
+    ["user_id", "rc.user_id"],
+    ["team_id", "rc.team_id"],
+  ] as const) {
+    const value = c.req.query(query);
+    if (value) {
+      clauses.push(`${col} = ?`);
+      binds.push(Number(value));
+    }
+  }
+  if (status && status !== "all") {
+    clauses.push("rc.status = ?");
+    binds.push(status);
+  } else if (status !== "all") {
+    clauses.push("rc.status NOT IN ('clean','resolved')");
+  }
+  if (minRisk) {
+    clauses.push("rc.risk_score >= ?");
+    binds.push(Number(minRisk));
+  }
+  if (from) {
+    clauses.push("rc.created_at >= ?");
+    binds.push(Number(from));
+  }
+  if (to) {
+    clauses.push("rc.created_at <= ?");
+    binds.push(Number(to));
+  }
+  const where = clauses.length ? `WHERE ${clauses.join(" AND ")}` : "";
+  const rows = await c.env.DB.prepare(
+    `SELECT rc.*, u.name AS user_name, t.name AS team_name, ch.name AS challenge_name,
+            s.correct AS submission_correct, s.created_at AS submission_at
+     FROM review_cases rc
+     LEFT JOIN users u ON u.id = rc.user_id
+     LEFT JOIN teams t ON t.id = rc.team_id
+     LEFT JOIN challenges ch ON ch.id = rc.challenge_id
+     LEFT JOIN submissions s ON s.id = rc.submission_id
+     ${where}
+     ORDER BY rc.risk_score DESC, rc.updated_at DESC
+     LIMIT 300`
+  ).bind(...binds).all();
+  return c.json({ cases: rows.results });
+});
+
+app.post("/review-cases", async (c) => {
+  const b = await c.req.json().catch(() => ({}));
+  const userId = Number(b.user_id || 0);
+  const teamId = b.team_id == null || b.team_id === "" ? null : Number(b.team_id);
+  if (!userId && teamId == null) return c.json({ error: "user_id or team_id required" }, 400);
+  const now = nowSeconds();
+  const res = await c.env.DB.prepare(
+    `INSERT INTO review_cases
+     (user_id, team_id, challenge_id, submission_id, risk_score, status, reason, evidence, proof_state, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, 'open', ?, ?, 'not_required', ?, ?)`
+  ).bind(
+    userId || null,
+    teamId,
+    b.challenge_id || null,
+    b.submission_id || null,
+    Number(b.risk_score ?? 25),
+    String(b.reason || "Manually opened by admin"),
+    JSON.stringify({ manual: true, opened_by: c.var.user!.id, note: b.note || null }),
+    now,
+    now
+  ).run();
+  const id = Number(res.meta.last_row_id);
+  await logAbuseEvent(c, ABUSE_EVENTS.REVIEW_CASE_CREATED, { user_id: userId || null, team_id: teamId, challenge_id: b.challenge_id || null, review_case_id: id, message: "Manual review case" });
+  await logAdminReviewAction(c, id, "Created manual review case", { reason: b.reason || null });
+  return c.json({ ok: true, id });
+});
+
+app.get("/review-cases/:id", async (c) => {
+  const id = Number(c.req.param("id"));
+  const row = await c.env.DB.prepare(
+    `SELECT rc.*, u.name AS user_name, t.name AS team_name, ch.name AS challenge_name,
+            s.provided AS submitted_flag, s.correct AS submission_correct, s.created_at AS submission_at
+     FROM review_cases rc
+     LEFT JOIN users u ON u.id = rc.user_id
+     LEFT JOIN teams t ON t.id = rc.team_id
+     LEFT JOIN challenges ch ON ch.id = rc.challenge_id
+     LEFT JOIN submissions s ON s.id = rc.submission_id
+     WHERE rc.id = ?`
+  ).bind(id).first<any>();
+  if (!row) return c.json({ error: "Not found" }, 404);
+  const events = await c.env.DB.prepare(
+    `SELECT ae.*, u.name AS user_name, t.name AS team_name, ch.name AS challenge_name
+     FROM anti_abuse_events ae
+     LEFT JOIN users u ON u.id = ae.user_id
+     LEFT JOIN teams t ON t.id = ae.team_id
+     LEFT JOIN challenges ch ON ch.id = ae.challenge_id
+     WHERE ae.review_case_id = ?
+        OR ae.submission_id = ?
+        OR (ae.challenge_id = ? AND (ae.user_id = ? OR (ae.team_id IS NOT NULL AND ae.team_id = ?)))
+     ORDER BY ae.id DESC
+     LIMIT 200`
+  ).bind(id, row.submission_id ?? -1, row.challenge_id ?? -1, row.user_id ?? -1, row.team_id ?? -1).all();
+  const submissions = row.challenge_id
+    ? await c.env.DB.prepare(
+      `SELECT s.id, s.provided, s.correct, s.created_at, u.name AS user_name, t.name AS team_name
+       FROM submissions s
+       JOIN users u ON u.id = s.user_id
+       LEFT JOIN teams t ON t.id = s.team_id
+       WHERE s.challenge_id = ? AND (s.user_id = ? OR (s.team_id IS NOT NULL AND s.team_id = ?))
+       ORDER BY s.id DESC
+       LIMIT 100`
+    ).bind(row.challenge_id, row.user_id ?? -1, row.team_id ?? -1).all()
+    : { results: [] };
+  const appeals = await c.env.DB.prepare(
+    "SELECT * FROM appeals WHERE review_case_id = ? ORDER BY id DESC"
+  ).bind(id).all();
+  return c.json({ case: row, events: events.results, submissions: submissions.results, appeals: appeals.results });
+});
+
+app.post("/review-cases/:id/action", async (c) => {
+  const id = Number(c.req.param("id"));
+  const b = await c.req.json().catch(() => ({}));
+  const action = String(b.action || "");
+  const note = String(b.note || "");
+  const rc = await getReviewCase(c.env, id);
+  if (!rc) return c.json({ error: "Not found" }, 404);
+  const now = nowSeconds();
+  const adminName = c.var.user!.name || `admin #${c.var.user!.id}`;
+  const newNotes = appendNote(rc.admin_notes, adminName, note);
+  const touch = async (sets: string[], binds: any[]) => {
+    sets.push("admin_notes = ?", "updated_at = ?");
+    binds.push(newNotes, now, id);
+    await c.env.DB.prepare(`UPDATE review_cases SET ${sets.join(", ")} WHERE id = ?`).bind(...binds).run();
+  };
+
+  if (action === "mark_clean") {
+    await touch(["status = 'clean'", "resolution = ?", "resolved_by = ?", "resolved_at = ?", "proof_state = CASE WHEN proof_state = 'submitted' THEN 'accepted' ELSE proof_state END"], [b.resolution || "Marked clean", c.var.user!.id, now]);
+  } else if (action === "request_proof") {
+    await touch(["status = 'proof_required'", "proof_state = 'requested'", "proof_requested_at = COALESCE(proof_requested_at, ?)"], [now]);
+  } else if (action === "freeze_leaderboard") {
+    await touch(["leaderboard_frozen = 1", "status = CASE WHEN status = 'monitor' THEN 'open' ELSE status END"], []);
+    if (rc.team_id) await c.env.DB.prepare("UPDATE teams SET under_review = 1 WHERE id = ?").bind(rc.team_id).run();
+    else if (rc.user_id) await c.env.DB.prepare("UPDATE users SET under_review = 1 WHERE id = ?").bind(rc.user_id).run();
+  } else if (action === "remove_solve") {
+    if (rc.challenge_id && rc.team_id) {
+      await c.env.DB.prepare("DELETE FROM solves WHERE challenge_id = ? AND team_id = ?").bind(rc.challenge_id, rc.team_id).run();
+    } else if (rc.challenge_id && rc.user_id) {
+      await c.env.DB.prepare("DELETE FROM solves WHERE challenge_id = ? AND user_id = ?").bind(rc.challenge_id, rc.user_id).run();
+    }
+    await touch(["status = 'resolved'", "resolution = ?", "resolved_by = ?", "resolved_at = ?"], [b.resolution || "Solve removed after review", c.var.user!.id, now]);
+  } else if (action === "disqualify_prizes") {
+    if (rc.team_id) await c.env.DB.prepare("UPDATE teams SET prize_disqualified = 1 WHERE id = ?").bind(rc.team_id).run();
+    else if (rc.user_id) await c.env.DB.prepare("UPDATE users SET prize_disqualified = 1 WHERE id = ?").bind(rc.user_id).run();
+    await touch(["prize_disqualified = 1", "status = 'resolved'", "resolution = ?", "resolved_by = ?", "resolved_at = ?"], [b.resolution || "Disqualified from prizes", c.var.user!.id, now]);
+  } else if (action === "suspend") {
+    if (rc.team_id) await c.env.DB.prepare("UPDATE teams SET suspended = 1 WHERE id = ?").bind(rc.team_id).run();
+    else if (rc.user_id) await c.env.DB.prepare("UPDATE users SET suspended = 1 WHERE id = ?").bind(rc.user_id).run();
+    await touch(["suspended = 1", "status = 'resolved'", "resolution = ?", "resolved_by = ?", "resolved_at = ?"], [b.resolution || "Suspended by admin review", c.var.user!.id, now]);
+  } else if (action === "ban") {
+    if (rc.team_id) await c.env.DB.prepare("UPDATE teams SET banned = 1 WHERE id = ?").bind(rc.team_id).run();
+    else if (rc.user_id) await c.env.DB.prepare("UPDATE users SET banned = 1 WHERE id = ?").bind(rc.user_id).run();
+    await touch(["banned = 1", "status = 'resolved'", "resolution = ?", "resolved_by = ?", "resolved_at = ?"], [b.resolution || "Banned by admin review", c.var.user!.id, now]);
+  } else if (action === "accept_proof") {
+    await touch(["proof_state = 'accepted'", "status = 'clean'", "resolution = ?", "resolved_by = ?", "resolved_at = ?"], [b.resolution || "Proof accepted", c.var.user!.id, now]);
+  } else if (action === "reject_proof") {
+    await touch(["proof_state = 'rejected'", "status = 'high_risk'", "resolution = ?"], [b.resolution || "Proof rejected"]);
+  } else if (action === "resolve") {
+    await touch(["status = 'resolved'", "resolution = ?", "resolved_by = ?", "resolved_at = ?"], [b.resolution || "Resolved", c.var.user!.id, now]);
+  } else if (action === "note") {
+    await touch([], []);
+  } else {
+    return c.json({ error: "Unknown action" }, 400);
+  }
+
+  await logAdminReviewAction(c, id, `Review action: ${action}`, { note: note || null, resolution: b.resolution || null });
+  await logEvent(c, EVENTS.ADMIN_ACTION, { challenge_id: rc.challenge_id, message: `Review case #${id}: ${action}` });
+  return c.json({ ok: true });
+});
+
+app.get("/appeals", async (c) => {
+  const status = c.req.query("status");
+  const where = status && status !== "all" ? "WHERE a.status = ?" : "";
+  const stmt = c.env.DB.prepare(
+    `SELECT a.*, u.name AS user_name, t.name AS team_name, rc.risk_score, rc.reason AS case_reason
+     FROM appeals a
+     LEFT JOIN users u ON u.id = a.user_id
+     LEFT JOIN teams t ON t.id = a.team_id
+     LEFT JOIN review_cases rc ON rc.id = a.review_case_id
+     ${where}
+     ORDER BY a.id DESC
+     LIMIT 300`
+  );
+  const rows = status && status !== "all" ? await stmt.bind(status).all() : await stmt.all();
+  return c.json({ appeals: rows.results });
+});
+
+app.post("/appeals/:id/action", async (c) => {
+  const id = Number(c.req.param("id"));
+  const b = await c.req.json().catch(() => ({}));
+  const action = String(b.action || "");
+  const row = await c.env.DB.prepare("SELECT * FROM appeals WHERE id = ?").bind(id).first<any>();
+  if (!row) return c.json({ error: "Not found" }, 404);
+  const status = action === "accept" ? "accepted" : action === "reject" ? "rejected" : action === "resolve" ? "resolved" : action === "note" ? row.status : "";
+  if (!status) return c.json({ error: "Unknown action" }, 400);
+  const notes = appendNote(row.admin_notes, c.var.user!.name || `admin #${c.var.user!.id}`, String(b.note || ""));
+  await c.env.DB.prepare(
+    `UPDATE appeals
+     SET status = ?, admin_notes = ?, resolution = COALESCE(?, resolution),
+         resolved_by = CASE WHEN ? != 'note' THEN ? ELSE resolved_by END,
+         resolved_at = CASE WHEN ? != 'note' THEN ? ELSE resolved_at END
+     WHERE id = ?`
+  ).bind(status, notes, b.resolution || null, action, c.var.user!.id, action, nowSeconds(), id).run();
+  await logAbuseEvent(c, ABUSE_EVENTS.ADMIN_ACTION, { user_id: row.user_id, team_id: row.team_id, review_case_id: row.review_case_id, message: `Appeal #${id}: ${action}` });
+  await logEvent(c, EVENTS.ADMIN_ACTION, { message: `Appeal #${id}: ${action}` });
   return c.json({ ok: true });
 });
 

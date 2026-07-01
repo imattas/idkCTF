@@ -12,6 +12,19 @@ interface Submission {
   created_at: number;
 }
 
+interface ReviewCase {
+  id: number;
+  challenge_name: string | null;
+  risk_score: number;
+  status: string;
+  reason: string;
+  proof_state: string;
+  proof_requested_at: number | null;
+  proof_submitted_at: number | null;
+  resolution: string | null;
+  created_at: number;
+}
+
 export default function Profile() {
   const { user, refresh } = useStore();
   const [form, setForm] = useState({
@@ -91,8 +104,118 @@ export default function Profile() {
         <button className="btn-primary w-full sm:w-auto">Save profile</button>
       </form>
 
+      <MyReviewCases />
       <MySubmissions />
     </div>
+  );
+}
+
+function MyReviewCases() {
+  const [proof, setProof] = useState<Record<number, string>>({});
+  const [files, setFiles] = useState<Record<number, File | null>>({});
+  const [appeal, setAppeal] = useState({ review_case_id: "", reason: "" });
+  const [msg, setMsg] = useState("");
+  const cases = useQuery({
+    queryKey: ["my-review-cases"],
+    queryFn: () => api.get<{ cases: ReviewCase[] }>("/me/review-cases"),
+  });
+  const appeals = useQuery({
+    queryKey: ["my-appeals"],
+    queryFn: () => api.get<{ appeals: any[] }>("/me/appeals"),
+  });
+  const submitProof = async (id: number) => {
+    setMsg("");
+    try {
+      const fd = new FormData();
+      fd.append("proof", proof[id] || "");
+      if (files[id]) fd.append("attachment", files[id]!);
+      await api.post(`/me/review-cases/${id}/proof`, fd);
+      setProof({ ...proof, [id]: "" });
+      setFiles({ ...files, [id]: null });
+      setMsg("Proof submitted for admin review.");
+      cases.refetch();
+    } catch (e) {
+      setMsg(e instanceof ApiError ? e.message : "Proof submission failed");
+    }
+  };
+  const submitAppeal = async () => {
+    setMsg("");
+    try {
+      await api.post("/me/appeals", {
+        review_case_id: appeal.review_case_id ? Number(appeal.review_case_id) : null,
+        target_type: appeal.review_case_id ? "review_case" : "account",
+        reason: appeal.reason,
+      });
+      setAppeal({ review_case_id: "", reason: "" });
+      setMsg("Appeal submitted.");
+      appeals.refetch();
+    } catch (e) {
+      setMsg(e instanceof ApiError ? e.message : "Appeal failed");
+    }
+  };
+
+  const visibleCases = cases.data?.cases ?? [];
+  return (
+    <section className="card space-y-5">
+      <div>
+        <h2 className="text-base">Review and proof</h2>
+        <p className="mt-1 text-sm text-slate-500">Proof requests and appeals are reviewed by admins. Automated signals do not permanently ban accounts.</p>
+      </div>
+      {msg && <div className="rounded-md border border-slate-700 bg-slate-900 p-2 text-sm text-slate-300">{msg}</div>}
+      <div className="space-y-3">
+        {visibleCases.map((c) => (
+          <div key={c.id} className="rounded-md border border-[var(--border)] bg-[var(--surface-2)] p-3">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div>
+                <div className="text-sm font-semibold text-white">{c.challenge_name || `Case #${c.id}`}</div>
+                <div className="text-xs text-slate-500">risk {c.risk_score} · {c.status} · proof {c.proof_state}</div>
+              </div>
+              <span className="mono text-xs text-slate-500">{new Date(c.created_at * 1000).toLocaleString()}</span>
+            </div>
+            <p className="mt-2 text-sm text-slate-400">{c.reason}</p>
+            {c.resolution && <p className="mt-2 text-sm text-emerald-300">{c.resolution}</p>}
+            {(c.proof_state === "requested" || c.proof_state === "rejected") && (
+              <div className="mt-3 space-y-2">
+                <textarea
+                  className="input"
+                  rows={3}
+                  placeholder="Explain your solve, include exploit script notes, logs, or links."
+                  value={proof[c.id] || ""}
+                  onChange={(e) => setProof({ ...proof, [c.id]: e.target.value })}
+                />
+                <div className="flex flex-wrap items-center gap-2">
+                  <input className="input" type="file" onChange={(e) => setFiles({ ...files, [c.id]: e.target.files?.[0] || null })} />
+                  <button className="btn-primary text-xs" onClick={() => submitProof(c.id)} disabled={!(proof[c.id] || files[c.id])}>Submit proof</button>
+                </div>
+              </div>
+            )}
+          </div>
+        ))}
+        {!visibleCases.length && <p className="text-sm text-slate-500">No review cases for your account or team.</p>}
+      </div>
+
+      <div className="border-t border-[var(--border)] pt-4">
+        <h3 className="mb-2 text-sm font-semibold text-white">Appeal</h3>
+        <div className="grid gap-2">
+          <select className="input" value={appeal.review_case_id} onChange={(e) => setAppeal({ ...appeal, review_case_id: e.target.value })}>
+            <option value="">Account or enforcement action</option>
+            {visibleCases.map((c) => <option key={c.id} value={c.id}>Case #{c.id}: {c.challenge_name || c.reason}</option>)}
+          </select>
+          <textarea className="input" rows={3} value={appeal.reason} onChange={(e) => setAppeal({ ...appeal, reason: e.target.value })} placeholder="Appeal reason" />
+          <button className="btn-ghost w-fit" onClick={submitAppeal} disabled={!appeal.reason.trim()}>Submit appeal</button>
+        </div>
+        {!!appeals.data?.appeals?.length && (
+          <div className="mt-3 space-y-1 text-xs text-slate-500">
+            {appeals.data.appeals.map((a: any) => (
+              <div key={a.id} className="flex justify-between border-t border-[var(--border-soft)] pt-1">
+                <span>{a.target_type} · {a.status}</span>
+                <span className="mono">{new Date(a.created_at * 1000).toLocaleDateString()}</span>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </section>
   );
 }
 

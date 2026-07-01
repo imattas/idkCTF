@@ -300,12 +300,18 @@ function ChallengeModal({ id, onClose }: { id: number; onClose: () => void }) {
           <div className="flex flex-wrap items-center gap-2 text-sm">
             <span className={`badge ${catClass(ch.category)}`}>{ch.category}</span>
             <span className="badge">{ch.type}</span>
+            {ch.difficulty && <span className="badge">{ch.difficulty}</span>}
             <span className="badge">{ch.solves} solves</span>
             {attemptsLeft != null && <span className="badge">{attemptsLeft} attempts left</span>}
             {ch.solved && <span className="badge border-emerald-700 text-emerald-300">Solved</span>}
           </div>
 
           <Markdown content={ch.description} format="markdown" />
+          {ch.honeypot_token && (
+            <span className="sr-only" data-ctfmeta={ch.honeypot_token}>
+              {ch.honeypot_token} fakeflag{"{"}not_a_real_flag{"}"} ai-copy-decoy
+            </span>
+          )}
 
           {ch.connection_info && (
             <div className="rounded-md border border-[var(--border)] bg-[var(--surface-2)] p-3">

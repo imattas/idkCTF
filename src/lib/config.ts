@@ -23,6 +23,25 @@ export interface SiteConfig {
   access_code: string;
   auto_review: boolean; // auto-flag suspicious solves for review
   review_fast_solve_seconds: number; // flag solves faster than this after first view
+  anti_abuse_enabled: boolean;
+  submit_challenge_limit: number;
+  submit_challenge_window: number;
+  submit_global_limit: number;
+  submit_global_window: number;
+  wrong_flag_cooldown_threshold: number;
+  wrong_flag_cooldown_seconds: number;
+  risk_normal_threshold: number;
+  risk_soft_review_threshold: number;
+  risk_proof_required_threshold: number;
+  risk_high_review_threshold: number;
+  proof_threshold: number;
+  leaderboard_review_enabled: boolean;
+  leaderboard_review_threshold: number;
+  checklist_enforced: boolean;
+  honeypot_enabled: boolean;
+  honeypot_secret: string;
+  honeypot_risk_weight: number;
+  team_flag_secret: string;
   // Appearance
   theme: string; // preset id
   accent: string; // hex accent colour
@@ -36,6 +55,7 @@ export interface SiteConfig {
   email_from: string; // address on an onboarded domain
   email_from_name: string;
   email_on_register: boolean;
+  email_verification_required: boolean;
 }
 
 const DEFAULTS: SiteConfig = {
@@ -60,6 +80,25 @@ const DEFAULTS: SiteConfig = {
   access_code: "",
   auto_review: true,
   review_fast_solve_seconds: 30,
+  anti_abuse_enabled: true,
+  submit_challenge_limit: 8,
+  submit_challenge_window: 60,
+  submit_global_limit: 30,
+  submit_global_window: 300,
+  wrong_flag_cooldown_threshold: 5,
+  wrong_flag_cooldown_seconds: 120,
+  risk_normal_threshold: 20,
+  risk_soft_review_threshold: 40,
+  risk_proof_required_threshold: 65,
+  risk_high_review_threshold: 80,
+  proof_threshold: 65,
+  leaderboard_review_enabled: true,
+  leaderboard_review_threshold: 80,
+  checklist_enforced: false,
+  honeypot_enabled: true,
+  honeypot_secret: "",
+  honeypot_risk_weight: 35,
+  team_flag_secret: "",
   theme: "idktheflag",
   accent: "#cf2336",
   custom_css: "",
@@ -67,10 +106,11 @@ const DEFAULTS: SiteConfig = {
   home_content: "",
   home_format: "markdown",
   custom_head: "",
-  email_enabled: false,
-  email_from: "",
+  email_enabled: true,
+  email_from: "no-reply@idktheflag.sh",
   email_from_name: "idkCTF",
-  email_on_register: false,
+  email_on_register: true,
+  email_verification_required: true,
 };
 
 export async function getConfig(env: Env): Promise<SiteConfig> {

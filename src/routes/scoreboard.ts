@@ -27,6 +27,8 @@ app.get("/", async (c) => {
     name: s.name,
     score: s.score,
     solves: s.solve_count,
+    under_review: !!s.under_review,
+    prize_disqualified: !!s.prize_disqualified,
   }));
   return c.json({ mode: a.cfg.mode, frozen: a.cutoff != null, standings: ranked });
 });

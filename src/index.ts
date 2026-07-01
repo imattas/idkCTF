@@ -64,6 +64,7 @@ api.get("/bootstrap", async (c) => {
       custom_head: cfg.custom_head,
       has_logo: !!logo,
       require_access_code: cfg.require_access_code,
+      email_verification_required: cfg.email_verification_required,
     },
     competition_state: competitionState(cfg, nowSeconds()),
     server_time: nowSeconds(),
@@ -78,6 +79,10 @@ api.get("/bootstrap", async (c) => {
           affiliation: u.affiliation,
           country: u.country,
           website: u.website,
+          verified: u.verified,
+          suspended: u.suspended,
+          prize_disqualified: u.prize_disqualified,
+          under_review: u.under_review,
         }
       : null,
   });

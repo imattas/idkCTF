@@ -9,6 +9,7 @@ import { logEvent, EVENTS, extractMeta } from "../lib/events";
 import { sendEmail, welcomeEmail } from "../lib/email";
 import { isIpBanned, isUsernameBanned } from "../lib/bans";
 import { rateLimit } from "../lib/ratelimit";
+import { logAbuseEvent, ABUSE_EVENTS } from "../lib/antiAbuse";
 
 const app = new Hono<{ Bindings: Env; Variables: Variables }>();
 
@@ -47,24 +48,61 @@ app.post("/register", async (c) => {
   }
 
   const canEmail = cfg.email_enabled && !!c.env.EMAIL && !!cfg.email_from;
+  const needsVerify = cfg.email_verification_required && canEmail;
 
   const hash = await hashPassword(password);
   const res = await c.env.DB.prepare(
-    "INSERT INTO users (name, email, password_hash, role, affiliation, country, website, bracket_id, created_at) VALUES (?, ?, ?, 'user', ?, ?, ?, ?, ?)"
+    "INSERT INTO users (name, email, password_hash, role, verified, affiliation, country, website, bracket_id, created_at) VALUES (?, ?, ?, 'user', ?, ?, ?, ?, ?, ?)"
   )
-    .bind(name, email, hash, body.affiliation || null, body.country || null, body.website || null, body.bracket_id || null, nowSeconds())
+    .bind(name, email, hash, needsVerify ? 0 : 1, body.affiliation || null, body.country || null, body.website || null, body.bracket_id || null, nowSeconds())
     .run();
   const userId = res.meta.last_row_id as number;
+  c.set("user", { id: userId, name, email, role: "user", team_id: null, is_captain: 0, affiliation: body.affiliation || null, country: body.country || null, website: body.website || null, verified: needsVerify ? 0 : 1 });
+  await logEvent(c, EVENTS.REGISTER, { message: name });
+
+  if (needsVerify) {
+    const rawToken = randomToken(24);
+    await c.env.DB.prepare(
+      "INSERT INTO email_verification_tokens (user_id, token_hash, created_at, expires_at) VALUES (?, ?, ?, ?)"
+    ).bind(userId, await sha256hex(rawToken), nowSeconds(), nowSeconds() + 60 * 60 * 24).run();
+    const url = new URL(c.req.url);
+    const verifyUrl = `${url.origin}/api/auth/verify-email?token=${encodeURIComponent(rawToken)}`;
+    c.executionCtx.waitUntil(sendEmail(
+      c.env,
+      cfg,
+      email,
+      `Verify your ${cfg.ctf_name} account`,
+      `<p>Welcome to <strong>${cfg.ctf_name}</strong>. Verify your account here:</p><p><a href="${verifyUrl}">${verifyUrl}</a></p>`,
+      `Verify your account: ${verifyUrl}`
+    ).then(() => {}));
+    return c.json({ ok: true, verification_required: true, message: "Check your email to verify your account." });
+  }
+
   const token = await createSession(c.env, userId);
   c.header("Set-Cookie", sessionCookie(token));
-  c.set("user", { id: userId, name, email, role: "user", team_id: null, is_captain: 0, affiliation: body.affiliation || null, country: body.country || null, website: body.website || null });
-  await logEvent(c, EVENTS.REGISTER, { message: name });
 
   if (cfg.email_on_register && canEmail) {
     const tpl = welcomeEmail(cfg, name);
     c.executionCtx.waitUntil(sendEmail(c.env, cfg, email, tpl.subject, tpl.html).then(() => {}));
   }
   return c.json({ ok: true });
+});
+
+app.get("/verify-email", async (c) => {
+  const token = c.req.query("token") || "";
+  if (!token) return c.text("Missing verification token", 400);
+  const now = nowSeconds();
+  const row = await c.env.DB.prepare(
+    "SELECT id, user_id, used_at, expires_at FROM email_verification_tokens WHERE token_hash = ?"
+  ).bind(await sha256hex(token)).first<{ id: number; user_id: number; used_at: number | null; expires_at: number }>();
+  if (!row || row.used_at || row.expires_at < now) return c.text("Verification link is invalid or expired", 400);
+  await c.env.DB.batch([
+    c.env.DB.prepare("UPDATE users SET verified = 1 WHERE id = ?").bind(row.user_id),
+    c.env.DB.prepare("UPDATE email_verification_tokens SET used_at = ? WHERE id = ?").bind(now, row.id),
+  ]);
+  const session = await createSession(c.env, row.user_id);
+  c.header("Set-Cookie", sessionCookie(session));
+  return c.redirect("/");
 });
 
 app.post("/login", async (c) => {
@@ -79,18 +117,35 @@ app.post("/login", async (c) => {
   if (!ident || !password) return c.json({ error: "Missing credentials" }, 400);
 
   const user = await c.env.DB.prepare(
-    "SELECT id, password_hash, banned FROM users WHERE lower(email) = ? OR lower(name) = ?"
+    "SELECT id, password_hash, banned, verified, suspended FROM users WHERE lower(email) = ? OR lower(name) = ?"
   )
     .bind(ident, ident)
-    .first<{ id: number; password_hash: string; banned: number }>();
+    .first<{ id: number; password_hash: string; banned: number; verified: number; suspended: number }>();
   if (!user || !(await verifyPassword(password, user.password_hash)))
     return c.json({ error: "Invalid credentials" }, 401);
   if (user.banned) return c.json({ error: "Account banned" }, 403);
+  if (!user.verified) return c.json({ error: "Verify your email before logging in." }, 403);
+  if (user.suspended) return c.json({ error: "Account suspended. You may appeal this decision." }, 403);
 
   const token = await createSession(c.env, user.id);
   c.header("Set-Cookie", sessionCookie(token));
   c.set("user", { id: user.id, name: "", email: "", role: "user", team_id: null, is_captain: 0, affiliation: null, country: null, website: null });
   await logEvent(c, EVENTS.LOGIN, {});
+  return c.json({ ok: true });
+});
+
+app.post("/appeal", async (c) => {
+  const body = await c.req.json().catch(() => ({}));
+  const email = String(body.email || "").trim().toLowerCase();
+  const reason = String(body.reason || "").trim();
+  const targetType = String(body.target_type || "account");
+  if (!email || !reason) return c.json({ error: "Email and appeal reason are required" }, 400);
+  if (!EMAIL_RE.test(email)) return c.json({ error: "Invalid email" }, 400);
+  const user = await c.env.DB.prepare("SELECT id, team_id FROM users WHERE lower(email) = ?").bind(email).first<{ id: number; team_id: number | null }>();
+  const res = await c.env.DB.prepare(
+    "INSERT INTO appeals (user_id, team_id, review_case_id, target_type, target_id, email, reason, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
+  ).bind(user?.id ?? null, user?.team_id ?? null, body.review_case_id || null, targetType, body.target_id || null, email, reason, nowSeconds()).run();
+  await logAbuseEvent(c, ABUSE_EVENTS.APPEAL_CREATED, { user_id: user?.id ?? null, team_id: user?.team_id ?? null, message: targetType, metadata: { appeal_id: res.meta.last_row_id } });
   return c.json({ ok: true });
 });
 

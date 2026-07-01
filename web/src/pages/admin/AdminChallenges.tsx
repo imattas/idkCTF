@@ -14,6 +14,8 @@ interface AdminChallenge {
   value: number;
   solves: number;
   flag_count: number;
+  difficulty: string;
+  generated_team_flags: number;
 }
 
 export default function AdminChallenges() {
@@ -107,10 +109,10 @@ export default function AdminChallenges() {
                     <button
                       className="btn-ghost text-xs mr-1"
                       onClick={() => release(c.id)}
-                      disabled={c.flag_count === 0}
-                      title={c.flag_count === 0 ? "Add a flag before release" : ""}
+                      disabled={c.flag_count === 0 && !c.generated_team_flags}
+                      title={c.flag_count === 0 && !c.generated_team_flags ? "Add a flag or enable generated flags before release" : ""}
                     >
-                      {c.flag_count === 0 ? "Needs flag" : "Release"}
+                      {c.flag_count === 0 && !c.generated_team_flags ? "Needs flag" : "Release"}
                     </button>
                   )}
                   <button className="btn-ghost text-xs mr-1" onClick={() => clone(c.id)}>Clone</button>
@@ -134,6 +136,17 @@ const EMPTY = {
   name: "", category: "misc", description: "", connection_info: "",
   type: "static", state: "hidden", value: 100, initial: 500, minimum: 100, decay: 20,
   max_attempts: 0, sort_order: 0, prerequisites: [] as number[],
+  difficulty: "medium", generated_team_flags: 0,
+  quality_checklist: {
+    intended_solve_path: false,
+    writeup: false,
+    reviewer_tested: false,
+    flag_validation: false,
+    files_attached: false,
+    remote_health_check: false,
+    no_guessing: false,
+    difficulty_calibrated: false,
+  },
 };
 
 function parsePrereqs(raw: any): number[] {
@@ -142,7 +155,14 @@ function parsePrereqs(raw: any): number[] {
   return [];
 }
 
-type Tab = "details" | "flags" | "hints" | "files";
+function parseChecklist(raw: any) {
+  const base = { ...EMPTY.quality_checklist };
+  if (!raw) return base;
+  if (typeof raw === "object") return { ...base, ...raw };
+  try { return { ...base, ...JSON.parse(raw) }; } catch { return base; }
+}
+
+type Tab = "details" | "quality" | "flags" | "hints" | "files";
 
 function Editor({ id, onClose, onSaved }: { id: number | "new"; onClose: () => void; onSaved: () => void }) {
   const isNew = id === "new";
@@ -162,7 +182,7 @@ function Editor({ id, onClose, onSaved }: { id: number | "new"; onClose: () => v
   const ch = detail.data?.challenge;
   const [loaded, setLoaded] = useState(false);
   if (ch && !loaded) {
-    setForm({ ...EMPTY, ...ch, connection_info: ch.connection_info ?? "", prerequisites: parsePrereqs(ch.prerequisites) });
+    setForm({ ...EMPTY, ...ch, connection_info: ch.connection_info ?? "", prerequisites: parsePrereqs(ch.prerequisites), quality_checklist: parseChecklist(ch.quality_checklist) });
     setLoaded(true);
   }
 
@@ -187,6 +207,9 @@ function Editor({ id, onClose, onSaved }: { id: number | "new"; onClose: () => v
       decay: form.type === "dynamic" ? Number(form.decay) : null,
       max_attempts: Number(form.max_attempts), sort_order: Number(form.sort_order),
       prerequisites: form.prerequisites || [],
+      difficulty: form.difficulty || "medium",
+      generated_team_flags: form.generated_team_flags ? 1 : 0,
+      quality_checklist: form.quality_checklist || EMPTY.quality_checklist,
     };
     try {
       if (chId == null) {
@@ -244,6 +267,7 @@ function Editor({ id, onClose, onSaved }: { id: number | "new"; onClose: () => v
 
       <div className="mb-5 flex gap-1 border-b border-slate-800">
         {tabBtn("details", "Details")}
+        {tabBtn("quality", "Quality")}
         {tabBtn("flags", "Flags", flagCount === 0 ? "!" : `(${flagCount})`)}
         {tabBtn("hints", "Hints", `(${detail.data?.hints?.length ?? 0})`)}
         {tabBtn("files", "Files", `(${detail.data?.files?.length ?? 0})`)}
@@ -279,13 +303,28 @@ function Editor({ id, onClose, onSaved }: { id: number | "new"; onClose: () => v
               </select>
             </div>
             <div>
+              <label className="label">Difficulty</label>
+              <select className="input" value={form.difficulty} onChange={set("difficulty")}>
+                <option value="easy">easy</option>
+                <option value="medium">medium</option>
+                <option value="hard">hard</option>
+                <option value="insane">insane</option>
+              </select>
+            </div>
+            <div>
               <label className="label">Visibility</label>
               <select className="input" value={form.state} onChange={set("state")}>
                 <option value="hidden">Hidden (draft)</option>
                 <option value="visible">Visible to players</option>
               </select>
             </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-4">
             <div><label className="label">Max attempts (0 = unlimited)</label><input className="input" type="number" value={form.max_attempts} onChange={set("max_attempts")} /></div>
+            <label className="mt-6 flex items-center gap-2 text-sm text-slate-300">
+              <input type="checkbox" checked={!!form.generated_team_flags} onChange={(e) => setForm({ ...form, generated_team_flags: e.target.checked ? 1 : 0 })} /> Generated team-specific flag
+            </label>
           </div>
 
           {form.type === "static" ? (
@@ -324,13 +363,20 @@ function Editor({ id, onClose, onSaved }: { id: number | "new"; onClose: () => v
               {chId == null ? "Create challenge" : "Save details"}
             </button>
             {chId != null && form.state !== "visible" && (
-              <button className="btn-ghost" onClick={() => saveBase(true)} disabled={flagCount === 0} title={flagCount === 0 ? "Add a flag first" : ""}>
+              <button className="btn-ghost" onClick={() => saveBase(true)} disabled={flagCount === 0 && !form.generated_team_flags} title={flagCount === 0 && !form.generated_team_flags ? "Add a flag or enable generated flags first" : ""}>
                 Save & release
               </button>
             )}
           </div>
           {chId == null && <p className="text-xs text-slate-500">After creating, you'll add flags, hints and files in the other tabs.</p>}
         </div>
+      )}
+
+      {tab === "quality" && (
+        <QualityTab
+          checklist={form.quality_checklist || EMPTY.quality_checklist}
+          setChecklist={(next) => setForm({ ...form, quality_checklist: next })}
+        />
       )}
 
       {tab === "flags" && chId != null && detail.data && (
@@ -344,6 +390,37 @@ function Editor({ id, onClose, onSaved }: { id: number | "new"; onClose: () => v
       {tab === "hints" && chId != null && detail.data && <HintsTab chId={chId} hints={detail.data.hints} refetch={refetchDetail} />}
       {tab === "files" && chId != null && detail.data && <FilesTab chId={chId} files={detail.data.files} refetch={refetchDetail} />}
     </Modal>
+  );
+}
+
+const CHECKLIST_LABELS: Record<string, string> = {
+  intended_solve_path: "Intended solve path",
+  writeup: "Writeup",
+  reviewer_tested: "Reviewer tested",
+  flag_validation: "Flag validation works",
+  files_attached: "Files attached correctly",
+  remote_health_check: "Remote health check",
+  no_guessing: "No guessing-only solve",
+  difficulty_calibrated: "Difficulty calibrated",
+};
+
+function QualityTab({ checklist, setChecklist }: { checklist: Record<string, boolean>; setChecklist: (next: Record<string, boolean>) => void }) {
+  return (
+    <div className="space-y-4">
+      <p className="text-sm text-slate-400">Publishing checklist for challenge quality review.</p>
+      <div className="grid gap-3 sm:grid-cols-2">
+        {Object.entries(CHECKLIST_LABELS).map(([key, label]) => (
+          <label key={key} className="flex items-center gap-2 rounded-md border border-slate-800 bg-slate-900/60 px-3 py-2 text-sm text-slate-300">
+            <input
+              type="checkbox"
+              checked={!!checklist[key]}
+              onChange={(e) => setChecklist({ ...checklist, [key]: e.target.checked })}
+            />
+            {label}
+          </label>
+        ))}
+      </div>
+    </div>
   );
 }
 

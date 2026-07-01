@@ -22,7 +22,7 @@ app.post("/", async (c) => {
   const now = nowSeconds();
   const hash = await hashPassword(admin_password);
   const res = await c.env.DB.prepare(
-    "INSERT INTO users (name, email, password_hash, role, created_at) VALUES (?, ?, ?, 'admin', ?)"
+    "INSERT INTO users (name, email, password_hash, role, verified, hidden, created_at) VALUES (?, ?, ?, 'admin', 1, 1, ?)"
   )
     .bind(admin_name, admin_email, hash, now)
     .run();
@@ -41,6 +41,11 @@ app.post("/", async (c) => {
     end_time: body.end_time || null,
     theme: "idktheflag",
     accent: "#cf2336",
+    email_enabled: true,
+    email_from: "no-reply@idktheflag.sh",
+    email_from_name: "idkCTF",
+    email_on_register: true,
+    email_verification_required: true,
   });
 
   const token = await createSession(c.env, userId);

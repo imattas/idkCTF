@@ -6,6 +6,7 @@ import { COUNTRIES } from "../../countries";
 
 interface AdminTeam {
   id: number; name: string; members: number; hidden: number; banned: number; invite_code: string;
+  suspended: number; prize_disqualified: number; under_review: number;
 }
 
 export default function AdminTeams() {
@@ -43,6 +44,9 @@ export default function AdminTeams() {
                 <td className="px-4 py-3 space-x-1">
                   {t.hidden ? <span className="badge border-slate-600 text-slate-400">hidden</span> : null}
                   {t.banned ? <span className="badge border-rose-700 text-rose-400">banned</span> : null}
+                  {t.suspended ? <span className="badge border-amber-700 text-amber-400">suspended</span> : null}
+                  {t.under_review ? <span className="badge border-orange-700 text-orange-400">review</span> : null}
+                  {t.prize_disqualified ? <span className="badge border-fuchsia-700 text-fuchsia-400">prize dq</span> : null}
                 </td>
                 <td className="px-4 py-3 text-right whitespace-nowrap">
                   <button className="btn-ghost text-xs mr-1" onClick={() => setManageId(t.id)}>Manage</button>
@@ -78,6 +82,9 @@ function TeamModal({ id, onClose, onSaved }: { id: number; onClose: () => void; 
       await api.patch(`/admin/teams/${id}`, {
         name: form.name, affiliation: form.affiliation, country: form.country, website: form.website,
         hidden: form.hidden ? 1 : 0, banned: form.banned ? 1 : 0, bracket_id: form.bracket_id || null,
+        suspended: form.suspended ? 1 : 0,
+        under_review: form.under_review ? 1 : 0,
+        prize_disqualified: form.prize_disqualified ? 1 : 0,
       });
       setMsg("Saved."); onSaved(); detail.refetch();
     } catch (e) { setMsg(e instanceof ApiError ? e.message : "Error"); }
@@ -111,6 +118,9 @@ function TeamModal({ id, onClose, onSaved }: { id: number; onClose: () => void; 
         <div className="flex gap-4">
           <label className="flex items-center gap-2 text-sm text-slate-300"><input type="checkbox" checked={!!form.hidden} onChange={(e) => set("hidden", e.target.checked)} /> Hidden</label>
           <label className="flex items-center gap-2 text-sm text-slate-300"><input type="checkbox" checked={!!form.banned} onChange={(e) => set("banned", e.target.checked)} /> Banned</label>
+          <label className="flex items-center gap-2 text-sm text-slate-300"><input type="checkbox" checked={!!form.suspended} onChange={(e) => set("suspended", e.target.checked)} /> Suspended</label>
+          <label className="flex items-center gap-2 text-sm text-slate-300"><input type="checkbox" checked={!!form.under_review} onChange={(e) => set("under_review", e.target.checked)} /> Under review</label>
+          <label className="flex items-center gap-2 text-sm text-slate-300"><input type="checkbox" checked={!!form.prize_disqualified} onChange={(e) => set("prize_disqualified", e.target.checked)} /> Prize DQ</label>
           <span className="text-sm text-slate-500">Invite: <code className="mono">{form.invite_code}</code></span>
         </div>
         <button className="btn-primary" onClick={save}>Save changes</button>
