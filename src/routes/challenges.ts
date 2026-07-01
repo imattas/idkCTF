@@ -50,9 +50,16 @@ app.get("/", async (c) => {
   // The public board only ever shows visible challenges — even to admins, who
   // manage hidden/draft challenges in the Admin panel. This keeps the board
   // identical to what players actually see.
+  const now = nowSeconds();
   const rows = await c.env.DB.prepare(
-    `SELECT id, name, category, type, difficulty, value, initial, minimum, decay, state, sort_order, prerequisites FROM challenges WHERE state = 'visible' ORDER BY category, sort_order, id`
-  ).all<any>();
+    `SELECT ch.id, ch.name, ch.category, ch.type, ch.difficulty, ch.value, ch.initial, ch.minimum, ch.decay,
+            ch.state, ch.sort_order, ch.prerequisites, ch.wave_id, w.name AS wave_name
+     FROM challenges ch
+     LEFT JOIN challenge_waves w ON w.id = ch.wave_id
+     WHERE ch.state = 'visible'
+       AND (ch.wave_id IS NULL OR w.state = 'released' OR (w.release_at IS NOT NULL AND w.release_at <= ?))
+     ORDER BY COALESCE(w.sort_order, 0), ch.category, ch.sort_order, ch.id`
+  ).bind(now).all<any>();
   const values = await challengeValues(c.env);
   const counts = await c.env.DB.prepare(
     `SELECT s.challenge_id, COUNT(*) AS n
@@ -74,6 +81,8 @@ app.get("/", async (c) => {
       category: r.category,
       type: r.type,
       difficulty: r.difficulty || "medium",
+      wave_id: r.wave_id,
+      wave_name: r.wave_name,
       state: r.state,
       value: values.get(r.id) ?? r.value,
       solves: countMap.get(r.id) ?? 0,
@@ -90,8 +99,16 @@ app.get("/:id", async (c) => {
   const { cfg, isAdmin } = g;
   const id = Number(c.req.param("id"));
 
-  const ch = await c.env.DB.prepare("SELECT * FROM challenges WHERE id = ?").bind(id).first<any>();
+  const now = nowSeconds();
+  const ch = await c.env.DB.prepare(
+    `SELECT ch.*, w.name AS wave_name, w.state AS wave_state, w.release_at AS wave_release_at
+     FROM challenges ch
+     LEFT JOIN challenge_waves w ON w.id = ch.wave_id
+     WHERE ch.id = ?`
+  ).bind(id).first<any>();
   if (!ch || (ch.state !== "visible" && !isAdmin)) return c.json({ error: "Not found" }, 404);
+  if (!isAdmin && ch.wave_id && ch.wave_state !== "released" && (!ch.wave_release_at || ch.wave_release_at > now))
+    return c.json({ error: "Not found" }, 404);
 
   const acct = accountKey(cfg.mode, c.var.user);
   const solvedSet = await solvedSetFor(c, cfg.mode, acct);
@@ -164,7 +181,8 @@ app.get("/:id", async (c) => {
   return c.json({
     challenge: {
       id: ch.id, name: ch.name, category: ch.category, description: ch.description,
-      connection_info: ch.connection_info, type: ch.type, difficulty: ch.difficulty || "medium", state: ch.state, max_attempts: ch.max_attempts,
+      connection_info: ch.connection_info, type: ch.type, difficulty: ch.difficulty || "medium", wave_id: ch.wave_id, wave_name: ch.wave_name,
+      state: ch.state, max_attempts: ch.max_attempts,
       value: values.get(ch.id) ?? ch.value, solves: countRow?.n ?? 0, solved, locked: false,
       files: files.results, hints, solvers: solvers.results, attempts, honeypot_token: honeypot,
     },

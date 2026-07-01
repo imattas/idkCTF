@@ -13,6 +13,7 @@ import {
   setWrongFlagCooldown,
   wrongFlagCooldown,
 } from "../src/lib/antiAbuse";
+import { canAccessChallenge } from "../src/lib/access";
 import { checkFlag } from "../src/lib/validate";
 import type { Env, SessionUser } from "../src/types";
 import type { SiteConfig } from "../src/lib/config";
@@ -36,8 +37,12 @@ class FakeStatement {
 class FakeDB {
   statements: string[] = [];
   insertedCases = 0;
+  accessChallenge: { state: string; prerequisites: string | null; wave_state: string | null; wave_release_at: number | null } | null = null;
+  solvedPrereqCount = 0;
   prepare(sql: string) { this.statements.push(sql); return new FakeStatement(this, sql); }
   async first<T>(sql: string): Promise<T | null> {
+    if (sql.includes("FROM challenges ch") && sql.includes("LEFT JOIN challenge_waves")) return this.accessChallenge as T | null;
+    if (sql.includes("COUNT(DISTINCT s.challenge_id)")) return { n: this.solvedPrereqCount } as T;
     if (sql.includes("SELECT id FROM review_cases")) return null;
     if (sql.includes("MIN(created_at)")) return { t: null } as T;
     if (sql.includes(ABUSE_EVENTS.FILE_DOWNLOADED)) return { n: 0 } as T;
@@ -107,6 +112,20 @@ assert.match(token, /^ctfmeta_[a-f0-9]{16}$/);
 assert.equal(containsHoneypot(`please use ${token}`, token), true);
 assert.equal(containsHoneypot("fakeflag{not_real}", token), true);
 assert.equal(checkFlag("fakeflag{not_real}", [{ type: "static", content: "flag{real}" }]), false);
+
+const fakeDb = env.DB as unknown as FakeDB;
+const now = Math.floor(Date.now() / 1000);
+fakeDb.accessChallenge = { state: "visible", prerequisites: null, wave_state: "draft", wave_release_at: null };
+assert.equal(await canAccessChallenge(env, 99, user, "teams"), false);
+fakeDb.accessChallenge = { state: "visible", prerequisites: null, wave_state: "draft", wave_release_at: now + 60 };
+assert.equal(await canAccessChallenge(env, 99, user, "teams"), false);
+fakeDb.accessChallenge = { state: "visible", prerequisites: null, wave_state: "draft", wave_release_at: now - 60 };
+assert.equal(await canAccessChallenge(env, 99, user, "teams"), true);
+fakeDb.accessChallenge = { state: "visible", prerequisites: "[1,2]", wave_state: "released", wave_release_at: null };
+fakeDb.solvedPrereqCount = 1;
+assert.equal(await canAccessChallenge(env, 99, user, "teams"), false);
+fakeDb.solvedPrereqCount = 2;
+assert.equal(await canAccessChallenge(env, 99, user, "teams"), true);
 
 assert.equal(checklistComplete(normalizeChecklist({
   intended_solve_path: true,

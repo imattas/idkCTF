@@ -76,6 +76,8 @@ export interface ChallengeSummary {
   category: string;
   type: "static" | "dynamic";
   difficulty?: string;
+  wave_id?: number | null;
+  wave_name?: string | null;
   state: string;
   value: number;
   solves: number;

@@ -56,9 +56,12 @@ app.post("/:id", async (c) => {
   }
 
   const ch = await c.env.DB.prepare(
-    `SELECT id, state, max_attempts, prerequisites, difficulty, value, generated_team_flags,
-            (SELECT COUNT(*) FROM files f WHERE f.challenge_id = challenges.id) AS file_count
-     FROM challenges WHERE id = ?`
+    `SELECT ch.id, ch.state, ch.max_attempts, ch.prerequisites, ch.difficulty, ch.value, ch.generated_team_flags,
+            w.state AS wave_state, w.release_at AS wave_release_at,
+            (SELECT COUNT(*) FROM files f WHERE f.challenge_id = ch.id) AS file_count
+     FROM challenges ch
+     LEFT JOIN challenge_waves w ON w.id = ch.wave_id
+     WHERE ch.id = ?`
   )
     .bind(challengeId)
     .first<{
@@ -69,9 +72,14 @@ app.post("/:id", async (c) => {
       difficulty: string;
       value: number;
       generated_team_flags: number;
+      wave_state: string | null;
+      wave_release_at: number | null;
       file_count: number;
     }>();
   if (!ch || ch.state !== "visible") return c.json({ status: "error", message: "Challenge not found" }, 404);
+  if (!isAdmin && ch.wave_state && ch.wave_state !== "released" && (!ch.wave_release_at || ch.wave_release_at > now)) {
+    return c.json({ status: "error", message: "Challenge not found" }, 404);
+  }
 
   const account = cfg.mode === "teams" ? u.team_id : u.id;
   const col = cfg.mode === "teams" ? "team_id" : "user_id";

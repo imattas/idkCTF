@@ -10,10 +10,18 @@ export async function canAccessChallenge(
   mode: "teams" | "users"
 ): Promise<boolean> {
   if (user?.role === "admin") return true;
-  const ch = await env.DB.prepare("SELECT state, prerequisites FROM challenges WHERE id = ?")
+  const ch = await env.DB.prepare(
+    `SELECT ch.state, ch.prerequisites,
+            w.state AS wave_state, w.release_at AS wave_release_at
+     FROM challenges ch
+     LEFT JOIN challenge_waves w ON w.id = ch.wave_id
+     WHERE ch.id = ?`
+  )
     .bind(challengeId)
-    .first<{ state: string; prerequisites: string | null }>();
+    .first<{ state: string; prerequisites: string | null; wave_state: string | null; wave_release_at: number | null }>();
   if (!ch || ch.state !== "visible") return false;
+  const now = Math.floor(Date.now() / 1000);
+  if (ch.wave_state && ch.wave_state !== "released" && (!ch.wave_release_at || ch.wave_release_at > now)) return false;
 
   let prereqs: number[] = [];
   try { const a = JSON.parse(ch.prerequisites || "[]"); if (Array.isArray(a)) prereqs = a.map(Number); } catch {}

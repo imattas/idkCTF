@@ -16,6 +16,42 @@ interface AdminChallenge {
   flag_count: number;
   difficulty: string;
   generated_team_flags: number;
+  wave_id: number | null;
+  wave_name: string | null;
+  wave_state: string | null;
+  wave_release_at: number | null;
+}
+
+interface ChallengeWave {
+  id: number;
+  name: string;
+  description: string | null;
+  state: "draft" | "released";
+  release_at: number | null;
+  released_at: number | null;
+  sort_order: number;
+  challenge_count: number;
+  visible_count: number;
+  hidden_count: number;
+  created_at: number;
+  updated_at: number | null;
+}
+
+function toLocalInput(ts?: number | null) {
+  if (!ts) return "";
+  const d = new Date(ts * 1000);
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+function fromLocalInput(value: string) {
+  if (!value) return null;
+  const ms = new Date(value).getTime();
+  return Number.isFinite(ms) ? Math.floor(ms / 1000) : null;
+}
+
+function formatTime(ts?: number | null) {
+  return ts ? new Date(ts * 1000).toLocaleString() : "Manual";
 }
 
 export default function AdminChallenges() {
@@ -24,11 +60,16 @@ export default function AdminChallenges() {
     queryKey: ["admin-challenges"],
     queryFn: () => api.get<{ challenges: AdminChallenge[] }>("/admin/challenges"),
   });
+  const waves = useQuery({
+    queryKey: ["admin-waves"],
+    queryFn: () => api.get<{ waves: ChallengeWave[] }>("/admin/waves"),
+  });
   const [editId, setEditId] = useState<number | "new" | null>(null);
   const [notice, setNotice] = useState("");
 
   const syncBoard = () => {
     refetch();
+    waves.refetch();
     qc.invalidateQueries({ queryKey: ["challenges"] });
   };
 
@@ -71,12 +112,19 @@ export default function AdminChallenges() {
       </div>
       {notice && <div className="mb-4 rounded-md border border-slate-700 bg-slate-950/60 px-3 py-2 text-sm text-slate-300">{notice}</div>}
 
+      <WavesPanel
+        waves={waves.data?.waves || []}
+        refetch={syncBoard}
+        flash={flash}
+      />
+
       <div className="card overflow-x-auto p-0">
         <table className="w-full text-sm">
           <thead>
             <tr className="border-b border-slate-800 text-left text-slate-400">
               <th className="px-4 py-3">Name</th>
               <th className="px-4 py-3">Category</th>
+              <th className="px-4 py-3">Wave</th>
               <th className="px-4 py-3">Type</th>
               <th className="px-4 py-3">Value</th>
               <th className="px-4 py-3">Flags</th>
@@ -90,6 +138,16 @@ export default function AdminChallenges() {
               <tr key={c.id} className="border-b border-slate-900 hover:bg-slate-800/40">
                 <td className="px-4 py-3 font-medium text-white">{c.name}</td>
                 <td className="px-4 py-3 text-slate-400">{c.category}</td>
+                <td className="px-4 py-3">
+                  {c.wave_name ? (
+                    <div className="flex flex-col gap-1">
+                      <span className="text-slate-300">{c.wave_name}</span>
+                      <span className={`badge w-fit ${c.wave_state === "released" ? "border-emerald-700 text-emerald-400" : "border-sky-700 text-sky-300"}`}>
+                        {c.wave_state === "released" ? "released" : c.wave_release_at ? formatTime(c.wave_release_at) : "draft"}
+                      </span>
+                    </div>
+                  ) : <span className="text-slate-600">-</span>}
+                </td>
                 <td className="px-4 py-3 text-slate-400">{c.type}</td>
                 <td className="px-4 py-3 mono text-accent">{c.value}</td>
                 <td className="px-4 py-3">
@@ -121,7 +179,7 @@ export default function AdminChallenges() {
               </tr>
             ))}
             {!data?.challenges.length && (
-              <tr><td colSpan={8} className="px-4 py-10 text-center text-slate-500">No challenges yet. Click <b>New challenge</b> to create one.</td></tr>
+              <tr><td colSpan={9} className="px-4 py-10 text-center text-slate-500">No challenges yet. Click <b>New challenge</b> to create one.</td></tr>
             )}
           </tbody>
         </table>
@@ -132,10 +190,158 @@ export default function AdminChallenges() {
   );
 }
 
+function WavesPanel({ waves, refetch, flash }: { waves: ChallengeWave[]; refetch: () => void; flash: (message: string) => void }) {
+  const [create, setCreate] = useState({ name: "", description: "", release_at: "", sort_order: 0 });
+  const [edits, setEdits] = useState<Record<number, { name: string; description: string; release_at: string; sort_order: number | string }>>({});
+
+  const draftFor = (wave: ChallengeWave) => edits[wave.id] || {
+    name: wave.name,
+    description: wave.description || "",
+    release_at: toLocalInput(wave.release_at),
+    sort_order: wave.sort_order,
+  };
+
+  const patchDraft = (wave: ChallengeWave, patch: Partial<ReturnType<typeof draftFor>>) => {
+    setEdits({ ...edits, [wave.id]: { ...draftFor(wave), ...patch } });
+  };
+
+  const add = async () => {
+    if (!create.name.trim()) return;
+    try {
+      await api.post("/admin/waves", {
+        name: create.name.trim(),
+        description: create.description.trim() || null,
+        release_at: fromLocalInput(create.release_at),
+        sort_order: Number(create.sort_order || 0),
+      });
+      setCreate({ name: "", description: "", release_at: "", sort_order: 0 });
+      flash("Wave created.");
+      refetch();
+    } catch (e) {
+      flash(e instanceof ApiError ? e.message : "Could not create wave");
+    }
+  };
+
+  const save = async (wave: ChallengeWave) => {
+    const d = draftFor(wave);
+    try {
+      await api.patch(`/admin/waves/${wave.id}`, {
+        name: d.name.trim(),
+        description: d.description.trim() || null,
+        release_at: fromLocalInput(d.release_at),
+        sort_order: Number(d.sort_order || 0),
+      });
+      const next = { ...edits };
+      delete next[wave.id];
+      setEdits(next);
+      flash("Wave saved.");
+      refetch();
+    } catch (e) {
+      flash(e instanceof ApiError ? e.message : "Could not save wave");
+    }
+  };
+
+  const release = async (wave: ChallengeWave) => {
+    try {
+      await api.post(`/admin/waves/${wave.id}/release`);
+      flash("Wave released.");
+      refetch();
+    } catch (e) {
+      const err = e instanceof ApiError ? e : null;
+      const failures = Array.isArray(err?.data?.failures) ? err.data.failures : [];
+      const first = failures[0] ? `${failures[0].name}: ${failures[0].error}` : err?.message;
+      flash(first || "Could not release wave");
+    }
+  };
+
+  const hide = async (wave: ChallengeWave) => {
+    await api.post(`/admin/waves/${wave.id}/hide`);
+    flash("Wave hidden.");
+    refetch();
+  };
+
+  const remove = async (wave: ChallengeWave) => {
+    if (!confirm(`Delete wave "${wave.name}"? Challenges will stay as drafts without a wave.`)) return;
+    await api.del(`/admin/waves/${wave.id}`);
+    flash("Wave deleted.");
+    refetch();
+  };
+
+  return (
+    <section className="card mb-6 space-y-4">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <h2 className="text-lg font-semibold text-white">Release waves</h2>
+          <p className="text-sm text-slate-400">{waves.length} wave{waves.length === 1 ? "" : "s"}</p>
+        </div>
+        <div className="grid flex-1 gap-2 md:grid-cols-[minmax(150px,1fr)_minmax(150px,1fr)_210px_90px_auto]">
+          <input className="input" placeholder="Wave name" value={create.name} onChange={(e) => setCreate({ ...create, name: e.target.value })} />
+          <input className="input" placeholder="Description" value={create.description} onChange={(e) => setCreate({ ...create, description: e.target.value })} />
+          <input className="input" type="datetime-local" value={create.release_at} onChange={(e) => setCreate({ ...create, release_at: e.target.value })} />
+          <input className="input" type="number" value={create.sort_order} onChange={(e) => setCreate({ ...create, sort_order: Number(e.target.value) })} />
+          <button className="btn-primary whitespace-nowrap" onClick={add} disabled={!create.name.trim()}>Add wave</button>
+        </div>
+      </div>
+
+      <div className="overflow-x-auto">
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="border-b border-slate-800 text-left text-slate-400">
+              <th className="px-3 py-2">Name</th>
+              <th className="px-3 py-2">Schedule</th>
+              <th className="px-3 py-2">Order</th>
+              <th className="px-3 py-2">Challenges</th>
+              <th className="px-3 py-2">State</th>
+              <th className="px-3 py-2"></th>
+            </tr>
+          </thead>
+          <tbody>
+            {waves.map((wave) => {
+              const draft = draftFor(wave);
+              return (
+                <tr key={wave.id} className="border-b border-slate-900">
+                  <td className="px-3 py-2">
+                    <input className="input min-w-44" value={draft.name} onChange={(e) => patchDraft(wave, { name: e.target.value })} />
+                    <input className="input mt-2 min-w-44" placeholder="Description" value={draft.description} onChange={(e) => patchDraft(wave, { description: e.target.value })} />
+                  </td>
+                  <td className="px-3 py-2"><input className="input min-w-48" type="datetime-local" value={draft.release_at} onChange={(e) => patchDraft(wave, { release_at: e.target.value })} /></td>
+                  <td className="px-3 py-2"><input className="input w-24" type="number" value={draft.sort_order} onChange={(e) => patchDraft(wave, { sort_order: e.target.value })} /></td>
+                  <td className="px-3 py-2 text-slate-300">
+                    <span className="mono">{wave.challenge_count}</span>
+                    <span className="ml-2 text-xs text-slate-500">{wave.visible_count} visible / {wave.hidden_count} hidden</span>
+                  </td>
+                  <td className="px-3 py-2">
+                    <span className={`badge ${wave.state === "released" ? "border-emerald-700 text-emerald-400" : "border-sky-700 text-sky-300"}`}>
+                      {wave.state === "released" ? "released" : wave.release_at ? formatTime(wave.release_at) : "draft"}
+                    </span>
+                  </td>
+                  <td className="px-3 py-2 text-right whitespace-nowrap">
+                    <button className="btn-ghost mr-1 text-xs" onClick={() => save(wave)}>Save</button>
+                    {wave.state === "released" ? (
+                      <button className="btn-ghost mr-1 text-xs" onClick={() => hide(wave)}>Hide</button>
+                    ) : (
+                      <button className="btn-ghost mr-1 text-xs" onClick={() => release(wave)}>Release</button>
+                    )}
+                    <button className="btn-danger text-xs" onClick={() => remove(wave)}>Delete</button>
+                  </td>
+                </tr>
+              );
+            })}
+            {!waves.length && (
+              <tr><td colSpan={6} className="px-3 py-8 text-center text-slate-500">No waves yet.</td></tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+    </section>
+  );
+}
+
 const EMPTY = {
   name: "", category: "misc", description: "", connection_info: "",
   type: "static", state: "hidden", value: 100, initial: 500, minimum: 100, decay: 20,
   max_attempts: 0, sort_order: 0, prerequisites: [] as number[],
+  wave_id: null as number | null,
   difficulty: "medium", generated_team_flags: 0,
   quality_checklist: {
     intended_solve_path: false,
@@ -179,10 +385,14 @@ function Editor({ id, onClose, onSaved }: { id: number | "new"; onClose: () => v
     enabled: chId != null,
     queryFn: () => api.get<any>(`/admin/challenges/${chId}`),
   });
+  const waves = useQuery({
+    queryKey: ["admin-waves"],
+    queryFn: () => api.get<{ waves: ChallengeWave[] }>("/admin/waves"),
+  });
   const ch = detail.data?.challenge;
   const [loaded, setLoaded] = useState(false);
   if (ch && !loaded) {
-    setForm({ ...EMPTY, ...ch, connection_info: ch.connection_info ?? "", prerequisites: parsePrereqs(ch.prerequisites), quality_checklist: parseChecklist(ch.quality_checklist) });
+    setForm({ ...EMPTY, ...ch, wave_id: ch.wave_id ?? null, connection_info: ch.connection_info ?? "", prerequisites: parsePrereqs(ch.prerequisites), quality_checklist: parseChecklist(ch.quality_checklist) });
     setLoaded(true);
   }
 
@@ -207,6 +417,7 @@ function Editor({ id, onClose, onSaved }: { id: number | "new"; onClose: () => v
       decay: form.type === "dynamic" ? Number(form.decay) : null,
       max_attempts: Number(form.max_attempts), sort_order: Number(form.sort_order),
       prerequisites: form.prerequisites || [],
+      wave_id: form.wave_id ? Number(form.wave_id) : null,
       difficulty: form.difficulty || "medium",
       generated_team_flags: form.generated_team_flags ? 1 : 0,
       quality_checklist: form.quality_checklist || EMPTY.quality_checklist,
@@ -251,17 +462,38 @@ function Editor({ id, onClose, onSaved }: { id: number | "new"; onClose: () => v
       {label}{badge ? <span className="ml-1">{badge}</span> : null}
     </button>
   );
+  const selectedWave = (waves.data?.waves || []).find((w) => w.id === Number(form.wave_id));
+  const releaseDisabled = flagCount === 0 && !form.generated_team_flags;
+  const footer = (
+    <div className="flex flex-wrap items-center gap-3">
+      <button className="btn-primary" onClick={() => saveBase(false)} disabled={!form.name}>
+        {chId == null ? "Create challenge" : "Save"}
+      </button>
+      {chId != null && form.state !== "visible" && (
+        <button
+          className="btn-ghost"
+          onClick={() => saveBase(true)}
+          disabled={releaseDisabled}
+          title={releaseDisabled ? "Add a flag or enable generated flags first" : ""}
+        >
+          Save & release
+        </button>
+      )}
+      <button className="btn-ghost ml-auto" onClick={onClose}>Close</button>
+      {toast && <span className="text-sm text-sky-400">{toast}</span>}
+    </div>
+  );
 
   return (
-    <Modal open onClose={onClose} wide title={isNew && chId == null ? "New challenge" : `Edit: ${form.name || "challenge"}`}>
+    <Modal open onClose={onClose} xl title={isNew && chId == null ? "New challenge" : `Edit: ${form.name || "challenge"}`} footer={footer}>
       {/* Status bar */}
       {chId != null && (
         <div className="mb-4 flex flex-wrap items-center gap-2 rounded-md border border-slate-800 bg-slate-950/50 px-3 py-2 text-xs">
           <span className={`badge ${form.state === "visible" ? "border-emerald-700 text-emerald-400" : "border-amber-700 text-amber-400"}`}>{form.state}</span>
+          {selectedWave && <span className="badge border-sky-700 text-sky-300">{selectedWave.name}</span>}
           {flagCount === 0
             ? <span className="text-rose-400">No flags yet. Add one before release.</span>
             : <span className="text-emerald-400">{flagCount} flag{flagCount > 1 ? "s" : ""} configured</span>}
-          {toast && <span className="ml-auto text-sky-400">{toast}</span>}
         </div>
       )}
 
@@ -320,9 +552,22 @@ function Editor({ id, onClose, onSaved }: { id: number | "new"; onClose: () => v
             </div>
           </div>
 
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid gap-4 md:grid-cols-3">
             <div><label className="label">Max attempts (0 = unlimited)</label><input className="input" type="number" value={form.max_attempts} onChange={set("max_attempts")} /></div>
-            <label className="mt-6 flex items-center gap-2 text-sm text-slate-300">
+            <div>
+              <label className="label">Release wave</label>
+              <select
+                className="input"
+                value={form.wave_id ?? ""}
+                onChange={(e) => setForm({ ...form, wave_id: e.target.value ? Number(e.target.value) : null })}
+              >
+                <option value="">No wave</option>
+                {(waves.data?.waves || []).map((wave) => (
+                  <option key={wave.id} value={wave.id}>{wave.name}</option>
+                ))}
+              </select>
+            </div>
+            <label className="md:mt-6 flex items-center gap-2 text-sm text-slate-300">
               <input type="checkbox" checked={!!form.generated_team_flags} onChange={(e) => setForm({ ...form, generated_team_flags: e.target.checked ? 1 : 0 })} /> Generated team-specific flag
             </label>
           </div>
@@ -358,16 +603,6 @@ function Editor({ id, onClose, onSaved }: { id: number | "new"; onClose: () => v
             </div>
           </div>
 
-          <div className="flex items-center gap-3 pt-2">
-            <button className="btn-primary" onClick={() => saveBase(false)} disabled={!form.name}>
-              {chId == null ? "Create challenge" : "Save details"}
-            </button>
-            {chId != null && form.state !== "visible" && (
-              <button className="btn-ghost" onClick={() => saveBase(true)} disabled={flagCount === 0 && !form.generated_team_flags} title={flagCount === 0 && !form.generated_team_flags ? "Add a flag or enable generated flags first" : ""}>
-                Save & release
-              </button>
-            )}
-          </div>
           {chId == null && <p className="text-xs text-slate-500">After creating, you'll add flags, hints and files in the other tabs.</p>}
         </div>
       )}

@@ -22,6 +22,12 @@ app.use("*", requireAdmin);
 const INLINE_LIMIT = 8 * 1024 * 1024; // 8MB max for D1 inline file storage
 const EMAIL_RE = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
 
+function nullableNumber(value: unknown): number | null {
+  if (value == null || value === "") return null;
+  const n = Number(value);
+  return Number.isFinite(n) ? Math.floor(n) : null;
+}
+
 function bytesToB64(bytes: Uint8Array): string {
   let bin = "";
   const chunk = 0x8000;
@@ -143,13 +149,127 @@ app.get("/stats", async (c) => {
   });
 });
 
+/* ---------------- Challenge waves ---------------- */
+
+app.get("/waves", async (c) => {
+  const rows = await c.env.DB.prepare(
+    `SELECT w.*,
+            COUNT(ch.id) AS challenge_count,
+            SUM(CASE WHEN ch.id IS NOT NULL AND ch.state = 'visible' THEN 1 ELSE 0 END) AS visible_count,
+            SUM(CASE WHEN ch.id IS NOT NULL AND ch.state <> 'visible' THEN 1 ELSE 0 END) AS hidden_count
+     FROM challenge_waves w
+     LEFT JOIN challenges ch ON ch.wave_id = w.id
+     GROUP BY w.id
+     ORDER BY w.sort_order, COALESCE(w.release_at, 4102444800), w.id`
+  ).all();
+  return c.json({ waves: rows.results });
+});
+
+app.post("/waves", async (c) => {
+  const b = await c.req.json().catch(() => ({}));
+  const name = String(b.name || "").trim();
+  if (!name) return c.json({ error: "Wave name required" }, 400);
+  const now = nowSeconds();
+  const res = await c.env.DB.prepare(
+    `INSERT INTO challenge_waves (name, description, state, release_at, sort_order, created_at, updated_at)
+     VALUES (?, ?, 'draft', ?, ?, ?, ?)`
+  )
+    .bind(name, b.description ? String(b.description) : null, nullableNumber(b.release_at), Number(b.sort_order ?? 0), now, now)
+    .run();
+  await logEvent(c, EVENTS.ADMIN_ACTION, { message: `Created challenge wave ${name}` });
+  return c.json({ ok: true, id: res.meta.last_row_id });
+});
+
+app.patch("/waves/:id", async (c) => {
+  const id = Number(c.req.param("id"));
+  const b = await c.req.json().catch(() => ({}));
+  const wave = await c.env.DB.prepare("SELECT id FROM challenge_waves WHERE id = ?").bind(id).first();
+  if (!wave) return c.json({ error: "Not found" }, 404);
+  const sets: string[] = [];
+  const binds: any[] = [];
+  if ("name" in b) {
+    const name = String(b.name || "").trim();
+    if (!name) return c.json({ error: "Wave name required" }, 400);
+    sets.push("name = ?");
+    binds.push(name);
+  }
+  if ("description" in b) {
+    sets.push("description = ?");
+    binds.push(b.description ? String(b.description) : null);
+  }
+  if ("release_at" in b) {
+    sets.push("release_at = ?");
+    binds.push(nullableNumber(b.release_at));
+  }
+  if ("sort_order" in b) {
+    sets.push("sort_order = ?");
+    binds.push(Number(b.sort_order ?? 0));
+  }
+  if (!sets.length) return c.json({ ok: true });
+  sets.push("updated_at = ?");
+  binds.push(nowSeconds(), id);
+  await c.env.DB.prepare(`UPDATE challenge_waves SET ${sets.join(", ")} WHERE id = ?`).bind(...binds).run();
+  await logEvent(c, EVENTS.ADMIN_ACTION, { message: `Updated challenge wave #${id}` });
+  return c.json({ ok: true });
+});
+
+app.post("/waves/:id/release", async (c) => {
+  const id = Number(c.req.param("id"));
+  const wave = await c.env.DB.prepare("SELECT name FROM challenge_waves WHERE id = ?").bind(id).first<{ name: string }>();
+  if (!wave) return c.json({ error: "Not found" }, 404);
+  const challenges = await c.env.DB.prepare("SELECT id, name FROM challenges WHERE wave_id = ? ORDER BY sort_order, id").bind(id).all<{ id: number; name: string }>();
+  const failures: { id: number; name: string; error: string }[] = [];
+  for (const ch of challenges.results) {
+    const release = await validateRelease(c.env, ch.id);
+    if (!release.ok) failures.push({ id: ch.id, name: ch.name, error: release.error });
+  }
+  if (failures.length) {
+    return c.json({ error: "Some challenges in this wave are not ready to release.", failures }, 400);
+  }
+  const now = nowSeconds();
+  await c.env.DB.batch([
+    c.env.DB.prepare("UPDATE challenge_waves SET state = 'released', released_at = ?, updated_at = ? WHERE id = ?").bind(now, now, id),
+    c.env.DB.prepare("UPDATE challenges SET state = 'visible' WHERE wave_id = ?").bind(id),
+  ]);
+  await logEvent(c, EVENTS.ADMIN_ACTION, { message: `Released challenge wave ${wave.name}` });
+  return c.json({ ok: true });
+});
+
+app.post("/waves/:id/hide", async (c) => {
+  const id = Number(c.req.param("id"));
+  const wave = await c.env.DB.prepare("SELECT name FROM challenge_waves WHERE id = ?").bind(id).first<{ name: string }>();
+  if (!wave) return c.json({ error: "Not found" }, 404);
+  const now = nowSeconds();
+  await c.env.DB.batch([
+    c.env.DB.prepare("UPDATE challenge_waves SET state = 'draft', released_at = NULL, updated_at = ? WHERE id = ?").bind(now, id),
+    c.env.DB.prepare("UPDATE challenges SET state = 'hidden' WHERE wave_id = ?").bind(id),
+  ]);
+  await logEvent(c, EVENTS.ADMIN_ACTION, { message: `Hid challenge wave ${wave.name}` });
+  return c.json({ ok: true });
+});
+
+app.delete("/waves/:id", async (c) => {
+  const id = Number(c.req.param("id"));
+  const wave = await c.env.DB.prepare("SELECT name FROM challenge_waves WHERE id = ?").bind(id).first<{ name: string }>();
+  if (!wave) return c.json({ error: "Not found" }, 404);
+  await c.env.DB.batch([
+    c.env.DB.prepare("UPDATE challenges SET wave_id = NULL WHERE wave_id = ?").bind(id),
+    c.env.DB.prepare("DELETE FROM challenge_waves WHERE id = ?").bind(id),
+  ]);
+  await logEvent(c, EVENTS.ADMIN_ACTION, { message: `Deleted challenge wave ${wave.name}` });
+  return c.json({ ok: true });
+});
+
 /* ---------------- Challenges ---------------- */
 
 app.get("/challenges", async (c) => {
   const rows = await c.env.DB.prepare(
     `SELECT ch.*, (SELECT COUNT(*) FROM solves s WHERE s.challenge_id = ch.id) AS solves,
-            (SELECT COUNT(*) FROM flags f WHERE f.challenge_id = ch.id) AS flag_count
-     FROM challenges ch ORDER BY category, sort_order, id`
+            (SELECT COUNT(*) FROM flags f WHERE f.challenge_id = ch.id) AS flag_count,
+            w.name AS wave_name, w.state AS wave_state, w.release_at AS wave_release_at
+     FROM challenges ch
+     LEFT JOIN challenge_waves w ON w.id = ch.wave_id
+     ORDER BY COALESCE(w.sort_order, 0), category, sort_order, id`
   ).all();
   return c.json({ challenges: rows.results });
 });
@@ -175,8 +295,8 @@ app.post("/challenges", async (c) => {
   const res = await c.env.DB.prepare(
     `INSERT INTO challenges
      (name, category, description, connection_info, type, state, value, initial, minimum, decay,
-      max_attempts, sort_order, prerequisites, difficulty, generated_team_flags, quality_checklist, created_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      max_attempts, sort_order, prerequisites, difficulty, generated_team_flags, quality_checklist, wave_id, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
   )
     .bind(
       b.name, b.category || "misc", b.description || "", b.connection_info || null,
@@ -187,6 +307,7 @@ app.post("/challenges", async (c) => {
       ["easy", "medium", "hard", "insane"].includes(b.difficulty) ? b.difficulty : "medium",
       b.generated_team_flags ? 1 : 0,
       normalizeChecklist(b.quality_checklist),
+      nullableNumber(b.wave_id),
       nowSeconds()
     )
     .run();
@@ -209,11 +330,11 @@ app.patch("/challenges/:id", async (c) => {
   const cols = [
     "name", "category", "description", "connection_info", "type", "state",
     "value", "initial", "minimum", "decay", "max_attempts", "sort_order",
-    "difficulty", "generated_team_flags",
+    "difficulty", "generated_team_flags", "wave_id",
   ];
   const sets: string[] = [];
   const binds: any[] = [];
-  for (const col of cols) if (col in b) { sets.push(`${col} = ?`); binds.push(b[col]); }
+  for (const col of cols) if (col in b) { sets.push(`${col} = ?`); binds.push(col === "wave_id" ? nullableNumber(b[col]) : b[col]); }
   if ("prerequisites" in b) {
     sets.push("prerequisites = ?");
     binds.push(Array.isArray(b.prerequisites) && b.prerequisites.length ? JSON.stringify(b.prerequisites) : null);
@@ -265,12 +386,12 @@ app.post("/challenges/:id/clone", async (c) => {
   const res = await c.env.DB.prepare(
     `INSERT INTO challenges
      (name, category, description, connection_info, type, state, value, initial, minimum, decay,
-      max_attempts, sort_order, prerequisites, difficulty, generated_team_flags, quality_checklist, created_at)
-     VALUES (?, ?, ?, ?, ?, 'hidden', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      max_attempts, sort_order, prerequisites, difficulty, generated_team_flags, quality_checklist, wave_id, created_at)
+     VALUES (?, ?, ?, ?, ?, 'hidden', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
   )
     .bind(`${src.name} (copy)`, src.category, src.description, src.connection_info, src.type,
       src.value, src.initial, src.minimum, src.decay, src.max_attempts, src.sort_order,
-      src.prerequisites, src.difficulty || "medium", src.generated_team_flags ? 1 : 0, src.quality_checklist || null, now)
+      src.prerequisites, src.difficulty || "medium", src.generated_team_flags ? 1 : 0, src.quality_checklist || null, src.wave_id || null, now)
     .run();
   const newId = res.meta.last_row_id as number;
 
