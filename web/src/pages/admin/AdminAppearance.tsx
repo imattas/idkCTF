@@ -101,8 +101,9 @@ export default function AdminAppearance() {
       <div className="card space-y-4">
         <h2 className="font-semibold text-white">Custom CSS</h2>
         <textarea className="input mono" rows={5} value={form.custom_css || ""} onChange={(e) => set("custom_css", e.target.value)} placeholder=":root { --accent: #ff0066; }" />
-        <h2 className="font-semibold text-white">Custom &lt;head&gt; HTML</h2>
-        <textarea className="input mono" rows={3} value={form.custom_head || ""} onChange={(e) => set("custom_head", e.target.value)} placeholder="<!-- analytics, fonts, meta tags -->" />
+        <h2 className="font-semibold text-white">Head meta/link tags</h2>
+        <textarea className="input mono" rows={3} value={form.custom_head || ""} onChange={(e) => set("custom_head", e.target.value)} placeholder={`<meta name="theme-color" content="#cf2336">`} />
+        <p className="text-xs text-slate-500">Only safe meta/link tags are applied. Scripts and event handlers are ignored.</p>
         <h2 className="font-semibold text-white">Footer HTML</h2>
         <textarea className="input" rows={2} value={form.footer_html || ""} onChange={(e) => set("footer_html", e.target.value)} placeholder="© 2026 My CTF — built on Cloudflare" />
       </div>

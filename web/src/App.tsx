@@ -1,5 +1,6 @@
 import { useEffect } from "react";
 import { Routes, Route, Navigate } from "react-router-dom";
+import DOMPurify from "dompurify";
 import { useStore } from "./store";
 import Layout from "./components/Layout";
 import Setup from "./pages/Setup";
@@ -13,6 +14,33 @@ import Profile from "./pages/Profile";
 import CustomPage from "./pages/CustomPage";
 import PublicProfile from "./pages/PublicProfile";
 import Admin from "./pages/admin/Admin";
+
+const HEAD_TAGS = ["meta", "link"];
+const HEAD_ATTRS = ["name", "content", "property", "charset", "http-equiv", "rel", "href", "crossorigin", "integrity", "referrerpolicy", "as", "type", "sizes", "media", "color"];
+const HEAD_LINK_RELS = new Set(["apple-touch-icon", "dns-prefetch", "icon", "manifest", "modulepreload", "preconnect", "preload", "stylesheet"]);
+
+function applyCustomHead(markup: string) {
+  document.querySelectorAll("[data-ctf-custom-head]").forEach((el) => el.remove());
+  if (!markup.trim()) return;
+
+  const clean = DOMPurify.sanitize(markup, {
+    ALLOWED_TAGS: HEAD_TAGS,
+    ALLOWED_ATTR: HEAD_ATTRS,
+  });
+  const template = document.createElement("template");
+  template.innerHTML = clean;
+
+  for (const node of Array.from(template.content.children)) {
+    if (node.tagName.toLowerCase() === "link") {
+      const rel = (node.getAttribute("rel") || "").toLowerCase();
+      const href = node.getAttribute("href") || "";
+      const safeHref = href.startsWith("/") || /^https?:\/\//i.test(href);
+      if (!HEAD_LINK_RELS.has(rel) || !safeHref) continue;
+    }
+    node.setAttribute("data-ctf-custom-head", "true");
+    document.head.appendChild(node);
+  }
+}
 
 export default function App() {
   const { config, user } = useStore();
@@ -40,13 +68,7 @@ export default function App() {
     }
     link.href = config.has_logo ? "/api/branding/favicon?" + Date.now() : "/branding/favicon.svg";
 
-    let head = document.getElementById("ctf-custom-head") as HTMLDivElement | null;
-    if (!head) {
-      head = document.createElement("div");
-      head.id = "ctf-custom-head";
-      document.head.appendChild(head);
-    }
-    head.innerHTML = config.custom_head || "";
+    applyCustomHead(config.custom_head || "");
   }, [config.theme, config.accent, config.custom_css, config.custom_head, config.ctf_name, config.has_logo]);
 
   if (!config.setup_complete) {

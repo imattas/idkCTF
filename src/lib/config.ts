@@ -30,7 +30,7 @@ export interface SiteConfig {
   footer_html: string;
   home_content: string; // HTML/markdown shown on the landing page
   home_format: "markdown" | "html";
-  custom_head: string; // raw HTML injected into <head> (analytics, fonts, meta)
+  custom_head: string; // sanitized meta/link tags injected into <head>
   // Email (Cloudflare Email Sending)
   email_enabled: boolean;
   email_from: string; // address on an onboarded domain
