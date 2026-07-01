@@ -16,14 +16,14 @@
     {
       "binding": "DB",
       "database_name": "idkctf",
-      "database_id": "36ceb099-a660-4af5-b7b4-94deab814fe9",
+      "database_id": "757ce778-1132-4c4b-96f3-1e1d9b38f430",
       "migrations_dir": "migrations"
     }
   ],
   "kv_namespaces": [
     {
       "binding": "SESSIONS",
-      "id": "ef98c660e02943a0ad882c955af5ad10"
+      "id": "4e4474c2ca664c2f89ada46bf442371b"
     }
   ],
   // Cloudflare Email Sending binding. Sending requires an onboarded domain
@@ -33,11 +33,11 @@
     {
       "name": "EMAIL"
     }
+  ],
+  "r2_buckets": [
+    {
+      "binding": "FILES",
+      "bucket_name": "idkctf-files"
+    }
   ]
-  // R2 (optional file storage) — uncomment if your account/token has R2 enabled.
-  // The Worker automatically falls back to storing challenge files inline in D1
-  // when this binding is absent, so the platform stays 100% on Cloudflare either way.
-  // ,"r2_buckets": [
-  //   { "binding": "FILES", "bucket_name": "idkctf-files" }
-  // ]
 }
