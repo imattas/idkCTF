@@ -30,14 +30,17 @@ app.post("/", async (c) => {
 
   await setConfig(c.env, {
     setup_complete: true,
-    ctf_name: ctf_name || "CloudCTF",
-    ctf_description: ctf_description || "",
+    ctf_name: ctf_name || "idkCTF",
+    ctf_description: ctf_description || "A capture-the-flag competition by idktheflag.",
     mode: mode === "users" ? "users" : "teams",
     registration_open: true,
+    site_lockdown: false,
     visibility: body.visibility === "public" ? "public" : "private",
     scoreboard_visible: true,
     start_time: body.start_time || null,
     end_time: body.end_time || null,
+    theme: "idktheflag",
+    accent: "#cf2336",
   });
 
   const token = await createSession(c.env, userId);

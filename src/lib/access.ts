@@ -24,7 +24,9 @@ export async function canAccessChallenge(
   const col = mode === "teams" ? "team_id" : "user_id";
   const ph = prereqs.map(() => "?").join(",");
   const cnt = await env.DB.prepare(
-    `SELECT COUNT(DISTINCT challenge_id) AS n FROM solves WHERE ${col} = ? AND challenge_id IN (${ph})`
+    `SELECT COUNT(DISTINCT s.challenge_id) AS n
+     FROM solves s JOIN users solver ON solver.id = s.user_id
+     WHERE solver.role = 'user' AND s.${col} = ? AND s.challenge_id IN (${ph})`
   )
     .bind(account, ...prereqs)
     .first<{ n: number }>();

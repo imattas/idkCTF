@@ -1,12 +1,12 @@
-import { useState } from "react";
+import { useState, type ChangeEvent, type FormEvent } from "react";
 import { api, ApiError } from "../api";
 import { useStore } from "../store";
 
 export default function Setup() {
   const { refresh } = useStore();
   const [form, setForm] = useState({
-    ctf_name: "CloudCTF",
-    ctf_description: "",
+    ctf_name: "idkCTF",
+    ctf_description: "A capture-the-flag competition by idktheflag.",
     mode: "teams",
     visibility: "private",
     admin_name: "",
@@ -16,9 +16,9 @@ export default function Setup() {
   const [err, setErr] = useState("");
   const [busy, setBusy] = useState(false);
 
-  const set = (k: string) => (e: any) => setForm({ ...form, [k]: e.target.value });
+  const set = (k: keyof typeof form) => (e: ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => setForm({ ...form, [k]: e.target.value });
 
-  const submit = async (e: React.FormEvent) => {
+  const submit = async (e: FormEvent) => {
     e.preventDefault();
     setErr("");
     setBusy(true);
@@ -33,11 +33,14 @@ export default function Setup() {
   };
 
   return (
-    <div className="mx-auto max-w-2xl px-4 py-12">
-      <h1 className="mb-1 text-3xl font-bold text-white">
-        <span className="text-sky-400 mono">{">_"}</span> Set up your CTF
-      </h1>
-      <p className="mb-8 text-slate-400">First-run configuration. You can change all of this later in Admin.</p>
+    <div className="mx-auto max-w-2xl px-4 py-12 page-stack">
+      <section className="page-header">
+        <div>
+          <div className="page-kicker">First run</div>
+          <h1 className="page-title">Set up your CTF</h1>
+          <p className="page-subtitle">Create the first admin and basic event settings.</p>
+        </div>
+      </section>
 
       {err && <div className="mb-4 rounded-md border border-rose-700 bg-rose-950/50 p-3 text-sm text-rose-300">{err}</div>}
 
@@ -87,7 +90,7 @@ export default function Setup() {
         </div>
 
         <button className="btn-primary w-full" disabled={busy}>
-          {busy ? "Setting up…" : "Create CTF"}
+          {busy ? "Setting up" : "Create CTF"}
         </button>
       </form>
     </div>

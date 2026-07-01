@@ -1,5 +1,5 @@
 {
-  "name": "cloudctf",
+  "name": "idkctf",
   "version": "1.0.0",
   "private": true,
   "description": "A full CTF platform (CTFd-style) running entirely on Cloudflare Workers + D1 + KV + R2",
@@ -11,8 +11,8 @@
     "typecheck": "tsc -p tsconfig.json && tsc -p web/tsconfig.json",
     "deploy": "vite build && wrangler deploy",
     "cf-typegen": "wrangler types",
-    "db:migrate:local": "wrangler d1 migrations apply cloudctf --local",
-    "db:migrate": "wrangler d1 migrations apply cloudctf --remote"
+    "db:migrate:local": "wrangler d1 migrations apply idkctf --local",
+    "db:migrate": "wrangler d1 migrations apply idkctf --remote"
   },
   "dependencies": {
     "dompurify": "^3.4.10",

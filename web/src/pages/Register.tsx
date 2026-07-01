@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, type ChangeEvent, type FormEvent } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { api, ApiError } from "../api";
@@ -16,9 +16,9 @@ export default function Register() {
   const { data: brk } = useQuery({ queryKey: ["brackets"], queryFn: () => api.get<{ brackets: Bracket[] }>("/brackets") });
   const userBrackets = (brk?.brackets ?? []).filter((b) => b.type === "users");
 
-  const set = (k: string) => (e: any) => setForm({ ...form, [k]: e.target.value });
+  const set = (k: keyof typeof form) => (e: ChangeEvent<HTMLInputElement | HTMLSelectElement>) => setForm({ ...form, [k]: e.target.value });
 
-  const submit = async (e: React.FormEvent) => {
+  const submit = async (e: FormEvent) => {
     e.preventDefault();
     setErr("");
     setBusy(true);
@@ -34,8 +34,13 @@ export default function Register() {
   };
 
   return (
-    <div className="mx-auto max-w-md">
-      <h1 className="mb-6 text-2xl font-bold text-white">Register</h1>
+    <div className="mx-auto max-w-md page-stack">
+      <section className="page-header">
+        <div>
+          <div className="page-kicker">Account</div>
+          <h1 className="page-title">Register</h1>
+        </div>
+      </section>
       {err && <div className="mb-4 rounded-md border border-rose-700 bg-rose-950/50 p-3 text-sm text-rose-300">{err}</div>}
       <form onSubmit={submit} className="card space-y-4">
         <div>
@@ -64,7 +69,7 @@ export default function Register() {
           <div>
             <label className="label">Country</label>
             <select className="input" value={form.country} onChange={set("country")}>
-              <option value="">— select —</option>
+              <option value="">Select country</option>
               {COUNTRIES.map((cn) => <option key={cn} value={cn}>{cn}</option>)}
             </select>
           </div>
@@ -73,15 +78,15 @@ export default function Register() {
           <div>
             <label className="label">Which division / scoreboard do you belong to?{userBrackets.length > 1 ? " *" : ""}</label>
             <select className="input" value={form.bracket_id} onChange={set("bracket_id")} required={userBrackets.length > 1}>
-              <option value="">{userBrackets.length > 1 ? "— select your division —" : "— none —"}</option>
+              <option value="">{userBrackets.length > 1 ? "Select your division" : "No division"}</option>
               {userBrackets.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
             </select>
           </div>
         )}
-        <button className="btn-primary w-full" disabled={busy}>{busy ? "…" : "Create account"}</button>
+        <button className="btn-primary w-full" disabled={busy}>{busy ? "Creating account" : "Create account"}</button>
       </form>
-      <p className="mt-4 text-center text-sm text-slate-400">
-        Already registered? <Link to="/login" className="text-sky-400 hover:underline">Log in</Link>
+      <p className="text-center text-sm text-slate-400">
+        Already registered? <Link to="/login" className="text-[var(--accent-strong)] hover:underline">Log in</Link>
       </p>
     </div>
   );

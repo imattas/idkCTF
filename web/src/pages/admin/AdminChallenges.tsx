@@ -23,18 +23,42 @@ export default function AdminChallenges() {
     queryFn: () => api.get<{ challenges: AdminChallenge[] }>("/admin/challenges"),
   });
   const [editId, setEditId] = useState<number | "new" | null>(null);
+  const [notice, setNotice] = useState("");
+
+  const syncBoard = () => {
+    refetch();
+    qc.invalidateQueries({ queryKey: ["challenges"] });
+  };
+
+  const flash = (message: string) => {
+    setNotice(message);
+    window.setTimeout(() => setNotice(""), 2500);
+  };
 
   const remove = async (id: number) => {
     if (!confirm("Delete this challenge and all its solves/flags?")) return;
     await api.del(`/admin/challenges/${id}`);
-    refetch();
-    qc.invalidateQueries({ queryKey: ["challenges"] });
+    syncBoard();
   };
-  const onSaved = () => { refetch(); qc.invalidateQueries({ queryKey: ["challenges"] }); };
+  const onSaved = syncBoard;
   const clone = async (id: number) => {
     await api.post(`/admin/challenges/${id}/clone`);
-    refetch();
-    qc.invalidateQueries({ queryKey: ["challenges"] });
+    flash("Draft clone created.");
+    syncBoard();
+  };
+  const release = async (id: number) => {
+    try {
+      await api.post(`/admin/challenges/${id}/release`);
+      flash("Challenge released.");
+      syncBoard();
+    } catch (e) {
+      flash(e instanceof ApiError ? e.message : "Could not release challenge");
+    }
+  };
+  const hide = async (id: number) => {
+    await api.post(`/admin/challenges/${id}/hide`);
+    flash("Challenge hidden.");
+    syncBoard();
   };
 
   return (
@@ -43,6 +67,7 @@ export default function AdminChallenges() {
         <h1 className="text-2xl font-bold text-white">Challenges</h1>
         <button className="btn-primary" onClick={() => setEditId("new")}>+ New challenge</button>
       </div>
+      {notice && <div className="mb-4 rounded-md border border-slate-700 bg-slate-950/60 px-3 py-2 text-sm text-slate-300">{notice}</div>}
 
       <div className="card overflow-x-auto p-0">
         <table className="w-full text-sm">
@@ -67,7 +92,7 @@ export default function AdminChallenges() {
                 <td className="px-4 py-3 mono text-accent">{c.value}</td>
                 <td className="px-4 py-3">
                   {c.flag_count === 0
-                    ? <span className="badge border-rose-700 text-rose-400">0 ⚠</span>
+                    ? <span className="badge border-rose-700 text-rose-400">0</span>
                     : <span className="text-slate-400">{c.flag_count}</span>}
                 </td>
                 <td className="px-4 py-3 text-slate-400">{c.solves}</td>
@@ -76,6 +101,18 @@ export default function AdminChallenges() {
                 </td>
                 <td className="px-4 py-3 text-right whitespace-nowrap">
                   <button className="btn-ghost text-xs mr-1" onClick={() => setEditId(c.id)}>Edit</button>
+                  {c.state === "visible" ? (
+                    <button className="btn-ghost text-xs mr-1" onClick={() => hide(c.id)}>Hide</button>
+                  ) : (
+                    <button
+                      className="btn-ghost text-xs mr-1"
+                      onClick={() => release(c.id)}
+                      disabled={c.flag_count === 0}
+                      title={c.flag_count === 0 ? "Add a flag before release" : ""}
+                    >
+                      {c.flag_count === 0 ? "Needs flag" : "Release"}
+                    </button>
+                  )}
                   <button className="btn-ghost text-xs mr-1" onClick={() => clone(c.id)}>Clone</button>
                   <button className="btn-danger text-xs" onClick={() => remove(c.id)}>Delete</button>
                 </td>
@@ -96,18 +133,12 @@ export default function AdminChallenges() {
 const EMPTY = {
   name: "", category: "misc", description: "", connection_info: "",
   type: "static", state: "hidden", value: 100, initial: 500, minimum: 100, decay: 20,
-  max_attempts: 0, sort_order: 0, prerequisites: [] as number[], tags: [] as string[],
+  max_attempts: 0, sort_order: 0, prerequisites: [] as number[],
 };
 
 function parsePrereqs(raw: any): number[] {
   if (Array.isArray(raw)) return raw.map(Number);
   if (typeof raw === "string" && raw) { try { const a = JSON.parse(raw); return Array.isArray(a) ? a.map(Number) : []; } catch { return []; } }
-  return [];
-}
-
-function parseStrArr(raw: any): string[] {
-  if (Array.isArray(raw)) return raw.map(String);
-  if (typeof raw === "string" && raw) { try { const a = JSON.parse(raw); return Array.isArray(a) ? a.map(String) : []; } catch { return []; } }
   return [];
 }
 
@@ -121,14 +152,7 @@ function Editor({ id, onClose, onSaved }: { id: number | "new"; onClose: () => v
   const [err, setErr] = useState("");
   const [toast, setToast] = useState("");
   const [descPreview, setDescPreview] = useState(false);
-  const [tagInput, setTagInput] = useState("");
   const set = (k: string) => (e: any) => setForm({ ...form, [k]: e.target.value });
-  const addTag = () => {
-    const t = tagInput.trim();
-    if (t && !(form.tags || []).includes(t)) setForm({ ...form, tags: [...(form.tags || []), t] });
-    setTagInput("");
-  };
-  const removeTag = (t: string) => setForm({ ...form, tags: (form.tags || []).filter((x: string) => x !== t) });
 
   const detail = useQuery({
     queryKey: ["admin-challenge", chId],
@@ -138,7 +162,7 @@ function Editor({ id, onClose, onSaved }: { id: number | "new"; onClose: () => v
   const ch = detail.data?.challenge;
   const [loaded, setLoaded] = useState(false);
   if (ch && !loaded) {
-    setForm({ ...EMPTY, ...ch, connection_info: ch.connection_info ?? "", prerequisites: parsePrereqs(ch.prerequisites), tags: parseStrArr(ch.tags) });
+    setForm({ ...EMPTY, ...ch, connection_info: ch.connection_info ?? "", prerequisites: parsePrereqs(ch.prerequisites) });
     setLoaded(true);
   }
 
@@ -156,26 +180,30 @@ function Editor({ id, onClose, onSaved }: { id: number | "new"; onClose: () => v
     const payload = {
       name: form.name, category: form.category, description: form.description,
       connection_info: form.connection_info || null, type: form.type,
-      state: makeVisible ? "visible" : form.state,
+      state: chId == null ? "hidden" : form.state,
       value: Number(form.type === "dynamic" ? form.initial : form.value),
       initial: form.type === "dynamic" ? Number(form.initial) : null,
       minimum: form.type === "dynamic" ? Number(form.minimum) : null,
       decay: form.type === "dynamic" ? Number(form.decay) : null,
       max_attempts: Number(form.max_attempts), sort_order: Number(form.sort_order),
       prerequisites: form.prerequisites || [],
-      tags: form.tags || [],
     };
     try {
       if (chId == null) {
         const r = await api.post<{ id: number }>("/admin/challenges", payload);
         setChId(r.id);
         setLoaded(true);
-        flash("Challenge created — now add a flag in the Flags tab.");
+        flash("Challenge created. Add a flag in the Flags tab.");
         setTab("flags");
       } else {
         await api.patch(`/admin/challenges/${chId}`, payload);
-        if (makeVisible) setForm({ ...form, state: "visible" });
-        flash("Saved.");
+        if (makeVisible) {
+          await api.post(`/admin/challenges/${chId}/release`);
+          setForm({ ...form, state: "visible" });
+          flash("Saved and released.");
+        } else {
+          flash("Saved.");
+        }
       }
       onSaved();
       detail.refetch();
@@ -185,6 +213,10 @@ function Editor({ id, onClose, onSaved }: { id: number | "new"; onClose: () => v
   };
 
   const flagCount = detail.data?.flags?.length ?? 0;
+  const refetchDetail = () => {
+    detail.refetch();
+    onSaved();
+  };
   const tabBtn = (t: Tab, label: string, badge?: string) => (
     <button
       onClick={() => chId != null || t === "details" ? setTab(t) : null}
@@ -204,15 +236,15 @@ function Editor({ id, onClose, onSaved }: { id: number | "new"; onClose: () => v
         <div className="mb-4 flex flex-wrap items-center gap-2 rounded-md border border-slate-800 bg-slate-950/50 px-3 py-2 text-xs">
           <span className={`badge ${form.state === "visible" ? "border-emerald-700 text-emerald-400" : "border-amber-700 text-amber-400"}`}>{form.state}</span>
           {flagCount === 0
-            ? <span className="text-rose-400">⚠ No flags yet — players can't solve this until you add one.</span>
-            : <span className="text-emerald-400">✓ {flagCount} flag{flagCount > 1 ? "s" : ""}</span>}
+            ? <span className="text-rose-400">No flags yet. Add one before release.</span>
+            : <span className="text-emerald-400">{flagCount} flag{flagCount > 1 ? "s" : ""} configured</span>}
           {toast && <span className="ml-auto text-sky-400">{toast}</span>}
         </div>
       )}
 
       <div className="mb-5 flex gap-1 border-b border-slate-800">
         {tabBtn("details", "Details")}
-        {tabBtn("flags", "Flags", flagCount === 0 ? "⚠" : `(${flagCount})`)}
+        {tabBtn("flags", "Flags", flagCount === 0 ? "!" : `(${flagCount})`)}
         {tabBtn("hints", "Hints", `(${detail.data?.hints?.length ?? 0})`)}
         {tabBtn("files", "Files", `(${detail.data?.files?.length ?? 0})`)}
       </div>
@@ -236,21 +268,7 @@ function Editor({ id, onClose, onSaved }: { id: number | "new"; onClose: () => v
               <textarea className="input" rows={4} value={form.description} onChange={set("description")} />
             )}
           </div>
-          <div><label className="label">Connection info (optional)</label><input className="input mono" value={form.connection_info} onChange={set("connection_info")} placeholder="nc host 1337  ·  https://target" /></div>
-
-          <div>
-            <label className="label">Tags (custom — shown on the card, separate from category)</label>
-            <div className="mb-2 flex flex-wrap gap-2">
-              {(form.tags || []).map((t: string) => (
-                <span key={t} className="badge border-sky-700 text-accent">{t}<button type="button" className="ml-1 text-slate-400 hover:text-rose-400" onClick={() => removeTag(t)}>✕</button></span>
-              ))}
-              {!(form.tags || []).length && <span className="text-xs text-slate-500">No tags.</span>}
-            </div>
-            <div className="flex gap-2">
-              <input className="input" value={tagInput} onChange={(e) => setTagInput(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); addTag(); } }} placeholder="e.g. beginner, sqli, 2024 — press Enter" />
-              <button type="button" className="btn-ghost" onClick={addTag}>Add tag</button>
-            </div>
-          </div>
+          <div><label className="label">Connection info (optional)</label><input className="input mono" value={form.connection_info} onChange={set("connection_info")} placeholder="nc host 1337 - https://target" /></div>
 
           <div className="grid grid-cols-3 gap-4">
             <div>
@@ -267,7 +285,7 @@ function Editor({ id, onClose, onSaved }: { id: number | "new"; onClose: () => v
                 <option value="visible">Visible to players</option>
               </select>
             </div>
-            <div><label className="label">Max attempts (0 = ∞)</label><input className="input" type="number" value={form.max_attempts} onChange={set("max_attempts")} /></div>
+            <div><label className="label">Max attempts (0 = unlimited)</label><input className="input" type="number" value={form.max_attempts} onChange={set("max_attempts")} /></div>
           </div>
 
           {form.type === "static" ? (
@@ -307,7 +325,7 @@ function Editor({ id, onClose, onSaved }: { id: number | "new"; onClose: () => v
             </button>
             {chId != null && form.state !== "visible" && (
               <button className="btn-ghost" onClick={() => saveBase(true)} disabled={flagCount === 0} title={flagCount === 0 ? "Add a flag first" : ""}>
-                Save & make visible
+                Save & release
               </button>
             )}
           </div>
@@ -315,14 +333,21 @@ function Editor({ id, onClose, onSaved }: { id: number | "new"; onClose: () => v
         </div>
       )}
 
-      {tab === "flags" && chId != null && detail.data && <FlagsTab chId={chId} flags={detail.data.flags} refetch={detail.refetch} />}
-      {tab === "hints" && chId != null && detail.data && <HintsTab chId={chId} hints={detail.data.hints} refetch={detail.refetch} />}
-      {tab === "files" && chId != null && detail.data && <FilesTab chId={chId} files={detail.data.files} refetch={detail.refetch} />}
+      {tab === "flags" && chId != null && detail.data && (
+        <FlagsTab
+          chId={chId}
+          flags={detail.data.flags}
+          refetch={refetchDetail}
+          onLastFlagDeleted={() => setForm({ ...form, state: "hidden" })}
+        />
+      )}
+      {tab === "hints" && chId != null && detail.data && <HintsTab chId={chId} hints={detail.data.hints} refetch={refetchDetail} />}
+      {tab === "files" && chId != null && detail.data && <FilesTab chId={chId} files={detail.data.files} refetch={refetchDetail} />}
     </Modal>
   );
 }
 
-function FlagsTab({ chId, flags, refetch }: { chId: number; flags: any[]; refetch: () => void }) {
+function FlagsTab({ chId, flags, refetch, onLastFlagDeleted }: { chId: number; flags: any[]; refetch: () => void; onLastFlagDeleted: () => void }) {
   const [flag, setFlag] = useState({ type: "static", content: "" });
   const add = async () => {
     if (!flag.content) return;
@@ -330,7 +355,11 @@ function FlagsTab({ chId, flags, refetch }: { chId: number; flags: any[]; refetc
     setFlag({ type: "static", content: "" });
     refetch();
   };
-  const del = async (id: number) => { await api.del(`/admin/flags/${id}`); refetch(); };
+  const del = async (id: number) => {
+    await api.del(`/admin/flags/${id}`);
+    if (flags.length <= 1) onLastFlagDeleted();
+    refetch();
+  };
   return (
     <div className="space-y-4">
       <p className="text-sm text-slate-400">Accepted flags. A challenge needs at least one. <code className="mono">static</code> = exact match, <code className="mono">case-insensitive</code>, or <code className="mono">regex</code>.</p>
@@ -338,10 +367,10 @@ function FlagsTab({ chId, flags, refetch }: { chId: number; flags: any[]; refetc
         {flags.map((f) => (
           <div key={f.id} className="flex items-center justify-between rounded-md border border-slate-800 bg-slate-900/60 px-3 py-2 text-sm">
             <span><span className="badge mr-2 border-slate-700 text-slate-400">{f.type}</span><code className="mono text-emerald-400">{f.content}</code></span>
-            <button className="text-rose-400 hover:text-rose-300" onClick={() => del(f.id)}>✕</button>
+            <button className="text-rose-400 hover:text-rose-300" onClick={() => del(f.id)}>Delete</button>
           </div>
         ))}
-        {!flags.length && <p className="text-xs text-amber-400">No flags yet — add one below.</p>}
+        {!flags.length && <p className="text-xs text-amber-400">No flags yet. Add one below.</p>}
       </div>
       <div className="flex gap-2">
         <select className="input w-40" value={flag.type} onChange={(e) => setFlag({ ...flag, type: e.target.value })}>
@@ -372,7 +401,7 @@ function HintsTab({ chId, hints, refetch }: { chId: number; hints: any[]; refetc
         {hints.map((h) => (
           <div key={h.id} className="flex items-center justify-between rounded-md border border-slate-800 bg-slate-900/60 px-3 py-2 text-sm">
             <span className="text-slate-300">{h.content} <span className="text-slate-500">({h.cost} pts)</span></span>
-            <button className="text-rose-400 hover:text-rose-300" onClick={() => del(h.id)}>✕</button>
+            <button className="text-rose-400 hover:text-rose-300" onClick={() => del(h.id)}>Delete</button>
           </div>
         ))}
         {!hints.length && <p className="text-xs text-slate-500">No hints.</p>}
@@ -397,14 +426,14 @@ function FilesTab({ chId, files, refetch }: { chId: number; files: any[]; refetc
     setBusy(true);
     setQueue(arr.map((f) => ({ name: f.name, status: "waiting" })));
     for (let i = 0; i < arr.length; i++) {
-      setQueue((q) => q.map((x, idx) => (idx === i ? { ...x, status: "uploading…" } : x)));
+      setQueue((q) => q.map((x, idx) => (idx === i ? { ...x, status: "uploading..." } : x)));
       const fd = new FormData();
       fd.append("file", arr[i]);
       try {
         await api.post(`/admin/challenges/${chId}/files`, fd);
-        setQueue((q) => q.map((x, idx) => (idx === i ? { ...x, status: "✓ done" } : x)));
+        setQueue((q) => q.map((x, idx) => (idx === i ? { ...x, status: "done" } : x)));
       } catch (e) {
-        setQueue((q) => q.map((x, idx) => (idx === i ? { ...x, status: `✗ ${e instanceof ApiError ? e.message : "failed"}` } : x)));
+        setQueue((q) => q.map((x, idx) => (idx === i ? { ...x, status: e instanceof ApiError ? e.message : "failed" } : x)));
       }
       refetch();
     }
@@ -421,10 +450,10 @@ function FilesTab({ chId, files, refetch }: { chId: number; files: any[]; refetc
       <div className="space-y-1">
         {files.map((f) => (
           <div key={f.id} className="flex items-center justify-between rounded-md border border-slate-800 bg-slate-900/60 px-3 py-2 text-sm">
-            <span className="text-slate-300">📎 {f.name} <span className="text-slate-500">({Math.ceil(f.size / 1024)} KB)</span></span>
+            <span className="text-slate-300">{f.name} <span className="text-slate-500">({Math.ceil(f.size / 1024)} KB)</span></span>
             <span className="flex items-center gap-3">
               <DownloadButton id={f.id} name={f.name} className="text-sky-400 hover:text-sky-300 text-xs" />
-              <button className="text-rose-400 hover:text-rose-300" onClick={() => del(f.id)}>✕</button>
+              <button className="text-rose-400 hover:text-rose-300" onClick={() => del(f.id)}>Delete</button>
             </span>
           </div>
         ))}
@@ -439,8 +468,8 @@ function FilesTab({ chId, files, refetch }: { chId: number; files: any[]; refetc
           dragging ? "border-sky-500 bg-sky-500/10" : "border-slate-700 hover:border-slate-600"
         }`}
       >
-        <span className="text-2xl">⬆</span>
-        <span className="mt-1 text-sm text-slate-300">{busy ? "Uploading…" : "Drop files here or click to browse"}</span>
+        <span className="text-sm font-semibold text-slate-300">Upload files</span>
+        <span className="mt-1 text-sm text-slate-300">{busy ? "Uploading..." : "Drop files here or click to browse"}</span>
         <span className="text-xs text-slate-500">multiple files supported</span>
         <input type="file" multiple className="hidden" disabled={busy} onChange={(e) => e.target.files && uploadMany(e.target.files)} />
       </label>

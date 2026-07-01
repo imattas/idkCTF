@@ -2,7 +2,7 @@
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "idkctf",
   "main": "src/index.ts",
-  "compatibility_date": "2025-05-01",
+  "compatibility_date": "2026-07-01",
   "account_id": "947309b8559eadac8c20a351beedf8c6",
   "assets": {
     "directory": "./dist",

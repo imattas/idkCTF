@@ -24,8 +24,18 @@ export async function challengeValues(env: Env, cutoff: number | null = null): P
     "SELECT id, type, value, initial, minimum, decay FROM challenges"
   ).all<{ id: number; type: string; value: number; initial: number | null; minimum: number | null; decay: number | null }>();
   const counts = cutoff
-    ? await env.DB.prepare("SELECT challenge_id, COUNT(*) AS n FROM solves WHERE created_at <= ? GROUP BY challenge_id").bind(cutoff).all<{ challenge_id: number; n: number }>()
-    : await env.DB.prepare("SELECT challenge_id, COUNT(*) AS n FROM solves GROUP BY challenge_id").all<{ challenge_id: number; n: number }>();
+    ? await env.DB.prepare(
+      `SELECT s.challenge_id, COUNT(*) AS n
+       FROM solves s JOIN users u ON u.id = s.user_id
+       WHERE u.role = 'user' AND s.created_at <= ?
+       GROUP BY s.challenge_id`
+    ).bind(cutoff).all<{ challenge_id: number; n: number }>()
+    : await env.DB.prepare(
+      `SELECT s.challenge_id, COUNT(*) AS n
+       FROM solves s JOIN users u ON u.id = s.user_id
+       WHERE u.role = 'user'
+       GROUP BY s.challenge_id`
+    ).all<{ challenge_id: number; n: number }>();
   const countMap = new Map(counts.results.map((r) => [r.challenge_id, r.n]));
   const out = new Map<number, number>();
   for (const c of challenges.results) {
@@ -50,12 +60,16 @@ export async function computeStandings(
 ): Promise<StandingEntry[]> {
   const values = await challengeValues(env, cutoff);
   const cut = cutoff ? Math.floor(Number(cutoff)) : null;
-  const andCutoff = cut ? ` AND created_at <= ${cut}` : "";
+  const andCutoff = cut ? ` AND s.created_at <= ${cut}` : "";
   const table = mode === "teams" ? "teams" : "users";
   const bracketClause = bracketId ? " AND bracket_id = ?" : "";
 
   const accounts = new Map<number, StandingEntry>();
-  const stmt = env.DB.prepare(`SELECT id, name, hidden FROM ${table} WHERE banned = 0${bracketClause}`);
+  const accountSql = mode === "teams"
+    ? `SELECT id, name, hidden FROM ${table} WHERE banned = 0${bracketClause}
+       AND NOT EXISTS (SELECT 1 FROM users admin_user WHERE admin_user.team_id = teams.id AND admin_user.role = 'admin')`
+    : `SELECT id, name, hidden FROM ${table} WHERE banned = 0 AND role = 'user'${bracketClause}`;
+  const stmt = env.DB.prepare(accountSql);
   const rows = await (bracketId ? stmt.bind(bracketId) : stmt).all<{ id: number; name: string; hidden: number }>();
   for (const a of rows.results)
     accounts.set(a.id, { account_id: a.id, name: a.name, score: 0, solve_count: 0, last_event: 0, hidden: a.hidden });
@@ -65,7 +79,9 @@ export async function computeStandings(
 
   // Solves
   const solves = await env.DB.prepare(
-    `SELECT challenge_id, user_id, team_id, created_at FROM solves WHERE 1=1${andCutoff}`
+    `SELECT s.challenge_id, s.user_id, s.team_id, s.created_at
+     FROM solves s JOIN users u ON u.id = s.user_id
+     WHERE u.role = 'user'${andCutoff}`
   ).all<SolveRow>();
   for (const s of solves.results) {
     const key = keyOf(s);
@@ -79,7 +95,11 @@ export async function computeStandings(
 
   // Awards
   const awards = await env.DB.prepare(
-    `SELECT user_id, team_id, value, created_at FROM awards WHERE 1=1${andCutoff}`
+    mode === "teams"
+      ? `SELECT a.user_id, a.team_id, a.value, a.created_at FROM awards a WHERE 1=1${cut ? ` AND a.created_at <= ${cut}` : ""}`
+      : `SELECT a.user_id, a.team_id, a.value, a.created_at
+         FROM awards a JOIN users u ON u.id = a.user_id
+         WHERE u.role = 'user'${cut ? ` AND a.created_at <= ${cut}` : ""}`
   ).all<{ user_id: number | null; team_id: number | null; value: number; created_at: number }>();
   for (const a of awards.results) {
     const key = mode === "teams" ? a.team_id : a.user_id;
@@ -92,7 +112,11 @@ export async function computeStandings(
 
   // Hint costs (deduct)
   const hints = await env.DB.prepare(
-    `SELECT hu.user_id AS user_id, hu.team_id AS team_id, h.cost AS cost FROM hint_unlocks hu JOIN hints h ON h.id = hu.hint_id WHERE 1=1${cut ? ` AND hu.created_at <= ${cut}` : ""}`
+    `SELECT hu.user_id AS user_id, hu.team_id AS team_id, h.cost AS cost
+     FROM hint_unlocks hu
+     JOIN hints h ON h.id = hu.hint_id
+     JOIN users u ON u.id = hu.user_id
+     WHERE u.role = 'user'${cut ? ` AND hu.created_at <= ${cut}` : ""}`
   ).all<{ user_id: number; team_id: number | null; cost: number }>();
   for (const h of hints.results) {
     const key = mode === "teams" ? h.team_id : h.user_id;

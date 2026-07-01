@@ -4,7 +4,7 @@ import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContai
 import { api, ApiError } from "../api";
 import type { ProfileStats } from "../types";
 
-const CAT_COLOR = "#38bdf8";
+const CAT_COLOR = "#cf2336";
 
 export default function PublicProfile({ kind }: { kind: "user" | "team" }) {
   const { id } = useParams();
@@ -13,7 +13,7 @@ export default function PublicProfile({ kind }: { kind: "user" | "team" }) {
     queryFn: () => api.get<any>(`/profile/${kind}/${id}`),
   });
 
-  if (isLoading) return <p className="text-slate-500">Loading…</p>;
+  if (isLoading) return <p className="text-slate-500">Loading...</p>;
   if (error) {
     const e = error as ApiError;
     return <p className="py-16 text-center text-slate-400">{e.status === 403 ? "Profiles are private." : "Not found."}</p>;
@@ -25,20 +25,21 @@ export default function PublicProfile({ kind }: { kind: "user" | "team" }) {
   const maxCat = Math.max(1, ...cats.map(([, v]) => v.points));
 
   return (
-    <div className="space-y-6">
-      <div className="flex flex-wrap items-end justify-between gap-3">
+    <div className="page-stack">
+      <section className="page-header">
         <div>
-          <h1 className="text-3xl font-bold text-white">{entity.name}</h1>
+          <div className="page-kicker">{kind}</div>
+          <h1 className="page-title">{entity.name}</h1>
           <div className="mt-1 flex flex-wrap gap-2 text-sm text-slate-400">
-            {entity.bracket_name && <span className="badge border-sky-700 text-accent">{entity.bracket_name}</span>}
+            {entity.bracket_name && <span className="badge badge-accent">{entity.bracket_name}</span>}
             {entity.affiliation && <span>{entity.affiliation}</span>}
-            {entity.country && <span>· {entity.country}</span>}
+            {entity.country && <span>{entity.country}</span>}
             {kind === "user" && entity.team_name && (
-              <Link to={`/teams/${entity.team_id}`} className="text-accent hover:underline">· team {entity.team_name}</Link>
+              <Link to={`/teams/${entity.team_id}`} className="text-accent hover:underline">team {entity.team_name}</Link>
             )}
           </div>
         </div>
-      </div>
+      </section>
 
       <div className="grid grid-cols-3 gap-4">
         <Stat label="Score" value={stats.score} />
@@ -52,7 +53,7 @@ export default function PublicProfile({ kind }: { kind: "user" | "team" }) {
           <div className="flex flex-wrap gap-2">
             {data.members.map((m: any) => (
               <Link key={m.id} to={`/users/${m.id}`} className="badge border-slate-700 text-slate-200 hover:border-sky-600">
-                {m.name}{m.is_captain ? " ★" : ""}
+                {m.name}{m.is_captain ? " (captain)" : ""}
               </Link>
             ))}
           </div>
@@ -80,7 +81,7 @@ export default function PublicProfile({ kind }: { kind: "user" | "team" }) {
           <div className="space-y-2">
             {cats.map(([cat, v]) => (
               <div key={cat}>
-                <div className="mb-1 flex justify-between text-sm"><span className="text-slate-300">{cat}</span><span className="text-slate-500">{v.count} solves · {v.points} pts</span></div>
+                <div className="mb-1 flex justify-between text-sm"><span className="text-slate-300">{cat}</span><span className="text-slate-500">{v.count} solves / {v.points} pts</span></div>
                 <div className="h-2 rounded-full bg-slate-800"><div className="h-2 rounded-full" style={{ width: `${(v.points / maxCat) * 100}%`, background: "var(--accent)" }} /></div>
               </div>
             ))}
@@ -119,7 +120,7 @@ function Stat({ label, value }: { label: string; value: any }) {
   return (
     <div className="card">
       <div className="text-sm text-slate-400">{label}</div>
-      <div className="mono text-3xl font-bold text-accent">{value}</div>
+      <div className="stat-value">{value}</div>
     </div>
   );
 }

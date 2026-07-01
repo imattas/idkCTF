@@ -1,41 +1,10 @@
 import type { Env } from "./events";
 
-export interface PluginRow {
-  name: string;
-  enabled: number;
-  config: Record<string, any>;
-  updated_at: number | null;
-}
-
-export async function listPlugins(env: Env): Promise<PluginRow[]> {
-  const rows = await env.DB.prepare("SELECT name, enabled, config, updated_at FROM plugins ORDER BY name").all<any>();
-  return rows.results.map((r) => ({ ...r, config: safeParse(r.config) }));
-}
-
-export async function getPlugin(env: Env, name: string): Promise<PluginRow | null> {
-  const r = await env.DB.prepare("SELECT name, enabled, config, updated_at FROM plugins WHERE name = ?").bind(name).first<any>();
-  return r ? { ...r, config: safeParse(r.config) } : null;
-}
-
-export async function isPluginEnabled(env: Env, name: string): Promise<boolean> {
-  const r = await env.DB.prepare("SELECT enabled FROM plugins WHERE name = ?").bind(name).first<{ enabled: number }>();
-  return !!r?.enabled;
-}
-
-export async function savePlugin(env: Env, name: string, enabled: boolean, config: any): Promise<void> {
-  await env.DB.prepare(
-    `INSERT INTO plugins (name, enabled, config, updated_at) VALUES (?, ?, ?, ?)
-     ON CONFLICT(name) DO UPDATE SET enabled = excluded.enabled, config = excluded.config, updated_at = excluded.updated_at`
-  )
-    .bind(name, enabled ? 1 : 0, JSON.stringify(config ?? {}), Math.floor(Date.now() / 1000))
-    .run();
-}
-
 function safeParse(s: string): Record<string, any> {
   try { return JSON.parse(s || "{}"); } catch { return {}; }
 }
 
-/* ---------------- Webhooks (multiple Discord targets) ---------------- */
+/* ---------------- Discord webhooks ---------------- */
 
 export interface WebhookRow {
   id: number;
@@ -72,17 +41,36 @@ export async function deleteWebhook(env: Env, id: number): Promise<void> {
   await env.DB.prepare("DELETE FROM webhooks WHERE id = ?").bind(id).run();
 }
 
+function deliveryTypeFor(type: string, events: unknown): string | null {
+  if (!Array.isArray(events)) return null;
+  const selected = events.map(String);
+  if (type === "flag.submit") return null;
+  if (type === "first_blood") {
+    if (selected.includes("first_blood")) return "first_blood";
+    if (selected.includes("solve")) return "solve";
+    return null;
+  }
+  return selected.includes(type) ? type : null;
+}
+
 // Fan an event out to every enabled webhook subscribed to it.
 export async function dispatchToPlugins(env: Env, type: string, payload: any): Promise<void> {
   const webhooks = await listWebhooks(env);
   if (!webhooks.some((w) => w.enabled)) return;
   const enriched = await enrich(env, payload);
-  // A first_blood also satisfies subscribers to "solve".
-  const effective = type === "first_blood" ? ["first_blood", "solve"] : [type];
   await Promise.all(
     webhooks
-      .filter((w) => w.enabled && Array.isArray(w.config.events) && effective.some((t) => w.config.events.includes(t)))
-      .map((w) => deliverDiscord(w.config, type, enriched).catch((e) => console.error(`webhook ${w.id} failed`, e)))
+      .filter((w) => w.enabled)
+      .map((w) => ({ webhook: w, type: deliveryTypeFor(type, w.config.events) }))
+      .filter((item): item is { webhook: WebhookRow; type: string } => !!item.type)
+      .map(({ webhook, type: deliveryType }) =>
+        deliverDiscord(webhook.config, deliveryType, {
+          ...enriched,
+          type: deliveryType,
+          original_type: type,
+          first_blood: type === "first_blood",
+        }).catch((e) => console.error(`webhook ${webhook.id} failed`, e))
+      )
   );
 }
 
@@ -124,11 +112,11 @@ function describe(type: string, p: any): string {
   const who = p.actor?.name ?? "Someone";
   const chal = p.challenge_name ? `**${p.challenge_name}**` : "a challenge";
   switch (type) {
-    case "first_blood": return `🩸 **FIRST BLOOD!** ${who} was first to solve ${chal}!`;
-    case "solve": return `✅ ${who} solved ${chal}`;
-    case "auth.register": return `👋 ${who} just registered`;
-    case "hint.unlock": return `💡 ${who} unlocked a hint on ${chal}`;
-    case "team.create": return `🚩 ${who} created a team`;
+    case "first_blood": return `FIRST BLOOD: ${who} was first to solve ${chal}`;
+    case "solve": return p.first_blood ? `First blood: ${who} solved ${chal}` : `${who} solved ${chal}`;
+    case "auth.register": return `${who} registered`;
+    case "hint.unlock": return `${who} unlocked a hint on ${chal}`;
+    case "team.create": return `${who} created a team`;
     default: return p.message || `Event: ${type}`;
   }
 }
@@ -148,15 +136,15 @@ export async function deliverDiscord(cfg: any, type: string, p: any): Promise<vo
   if (format === "message" || format === "both") content += text;
   content = content.trim();
 
-  const body: any = { username: cfg.username || "CloudCTF" };
+  const body: any = { username: cfg.username || "idkCTF" };
   if (content) body.content = content;
   if (format === "embed" || format === "both") {
     body.embeds = [{ description: text, color: COLORS[type] ?? COLORS.default, timestamp: new Date((p.at ?? 0) * 1000).toISOString() }];
   }
-  await fetch(cfg.url, {
+  const res = await fetch(cfg.url, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
   });
+  if (!res.ok) throw new Error(`Discord webhook failed (${res.status})`);
 }
-

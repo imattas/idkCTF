@@ -18,8 +18,15 @@ async function request<T>(method: string, path: string, body?: any): Promise<T> 
   }
   const res = await fetch(`/api${path}`, opts);
   const text = await res.text();
-  const data = text ? JSON.parse(text) : null;
-  if (!res.ok) throw new ApiError(data?.error || data?.message || res.statusText, res.status, data);
+  let data: any = null;
+  if (text) {
+    try {
+      data = JSON.parse(text);
+    } catch {
+      data = { message: text };
+    }
+  }
+  if (!res.ok) throw new ApiError(data?.error || data?.message || res.statusText || "Request failed", res.status, data);
   return data as T;
 }
 

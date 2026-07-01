@@ -46,7 +46,7 @@ export async function getSessionUser(env: Env, req: Request): Promise<SessionUse
   if (!raw) return null;
   const { userId } = JSON.parse(raw) as SessionData;
   const user = await env.DB.prepare(
-    "SELECT id, name, email, role, team_id, is_captain, banned FROM users WHERE id = ?"
+    "SELECT id, name, email, role, team_id, is_captain, affiliation, country, website, banned FROM users WHERE id = ?"
   )
     .bind(userId)
     .first<SessionUser & { banned: number }>();

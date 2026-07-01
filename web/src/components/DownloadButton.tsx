@@ -26,7 +26,7 @@ export default function DownloadButton({ id, name, size, className }: { id: numb
   return (
     <span className="inline-flex flex-col">
       <button onClick={go} disabled={busy} className={className || "btn-ghost text-xs"}>
-        {busy ? "Downloading…" : <>⬇ {name}{size != null && <span className="ml-1 text-slate-500">({fmtSize(size)})</span>}</>}
+        {busy ? "Downloading" : <>Download {name}{size != null && <span className="ml-1 text-slate-500">({fmtSize(size)})</span>}</>}
       </button>
       {err && <span className="mt-1 text-xs text-rose-400">{err}</span>}
     </span>

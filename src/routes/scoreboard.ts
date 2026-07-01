@@ -9,7 +9,7 @@ const app = new Hono<{ Bindings: Env; Variables: Variables }>();
 async function access(c: any): Promise<{ ok: boolean; status?: number; cfg: any; cutoff: number | null; isAdmin: boolean }> {
   const cfg = await getConfig(c.env);
   const isAdmin = c.var.user?.role === "admin";
-  if (cfg.visibility === "private" && !c.var.user) return { ok: false, status: 403, cfg, cutoff: null, isAdmin };
+  if ((cfg.visibility === "private" || cfg.site_lockdown) && !c.var.user) return { ok: false, status: 403, cfg, cutoff: null, isAdmin };
   if (!cfg.scoreboard_visible && !isAdmin) return { ok: false, status: 403, cfg, cutoff: null, isAdmin };
   const now = nowSeconds();
   const cutoff = !isAdmin && cfg.freeze_time && now > cfg.freeze_time ? cfg.freeze_time : null;
@@ -43,11 +43,13 @@ app.get("/graph", async (c) => {
   if (!ids.length) return c.json({ series: [] });
 
   const col = a.cfg.mode === "teams" ? "team_id" : "user_id";
-  const andCutoff = a.cutoff ? ` AND created_at <= ${Math.floor(Number(a.cutoff))}` : "";
+  const andCutoff = a.cutoff ? ` AND s.created_at <= ${Math.floor(Number(a.cutoff))}` : "";
   const placeholders = ids.map(() => "?").join(",");
 
   const solves = await c.env.DB.prepare(
-    `SELECT ${col} AS acct, challenge_id, created_at FROM solves WHERE ${col} IN (${placeholders})${andCutoff}`
+    `SELECT s.${col} AS acct, s.challenge_id, s.created_at
+     FROM solves s JOIN users u ON u.id = s.user_id
+     WHERE u.role = 'user' AND s.${col} IN (${placeholders})${andCutoff}`
   )
     .bind(...ids)
     .all<{ acct: number; challenge_id: number; created_at: number }>();

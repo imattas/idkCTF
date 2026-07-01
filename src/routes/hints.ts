@@ -24,6 +24,13 @@ app.post("/:id/unlock", async (c) => {
   if (!(await canAccessChallenge(c.env, hint.challenge_id, u, cfg.mode)))
     return c.json({ error: "Hint not found" }, 404);
 
+  if (u.role === "admin") {
+    const content = await c.env.DB.prepare("SELECT content FROM hints WHERE id = ?")
+      .bind(hintId)
+      .first<{ content: string }>();
+    return c.json({ ok: true, content: content?.content, admin_check: true });
+  }
+
   if (cfg.mode === "teams" && !u.team_id)
     return c.json({ error: "Join a team before unlocking hints" }, 400);
 

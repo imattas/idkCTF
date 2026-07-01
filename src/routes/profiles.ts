@@ -7,7 +7,7 @@ const app = new Hono<{ Bindings: Env; Variables: Variables }>();
 
 async function guard(c: AppContext): Promise<boolean> {
   const cfg = await getConfig(c.env);
-  return !(cfg.visibility === "private" && !c.var.user);
+  return !((cfg.visibility === "private" || cfg.site_lockdown) && !c.var.user);
 }
 
 interface SolveJoin {
@@ -26,21 +26,33 @@ async function buildStats(
   const values = await challengeValues(c.env);
   const solves = await c.env.DB.prepare(
     `SELECT s.challenge_id, ch.name, ch.category, s.created_at
-     FROM solves s JOIN challenges ch ON ch.id = s.challenge_id
-     WHERE s.${column} = ? ORDER BY s.created_at`
+     FROM solves s
+     JOIN challenges ch ON ch.id = s.challenge_id
+     JOIN users u ON u.id = s.user_id
+     WHERE s.${column} = ? AND u.role = 'user'
+     ORDER BY s.created_at`
   )
     .bind(id)
     .all<SolveJoin>();
 
   const awardCol = column; // awards use same column name
   const awards = await c.env.DB.prepare(
-    `SELECT name, value, created_at FROM awards WHERE ${awardCol} = ? ORDER BY created_at`
+    column === "user_id"
+      ? `SELECT a.name, a.value, a.created_at
+         FROM awards a JOIN users u ON u.id = a.user_id
+         WHERE a.${awardCol} = ? AND u.role = 'user'
+         ORDER BY a.created_at`
+      : `SELECT name, value, created_at FROM awards WHERE ${awardCol} = ? ORDER BY created_at`
   )
     .bind(id)
     .all<{ name: string; value: number; created_at: number }>();
 
   const hintCost = await c.env.DB.prepare(
-    `SELECT COALESCE(SUM(h.cost),0) AS c FROM hint_unlocks hu JOIN hints h ON h.id = hu.hint_id WHERE hu.${column} = ?`
+    `SELECT COALESCE(SUM(h.cost),0) AS c
+     FROM hint_unlocks hu
+     JOIN hints h ON h.id = hu.hint_id
+     JOIN users u ON u.id = hu.user_id
+     WHERE hu.${column} = ? AND u.role = 'user'`
   )
     .bind(id)
     .first<{ c: number }>();
@@ -91,7 +103,7 @@ app.get("/user/:id", async (c) => {
   const user = await c.env.DB.prepare(
     `SELECT u.id, u.name, u.affiliation, u.country, u.website, u.created_at, u.hidden, u.team_id, t.name AS team_name, b.name AS bracket_name
      FROM users u LEFT JOIN teams t ON t.id = u.team_id LEFT JOIN brackets b ON b.id = u.bracket_id
-     WHERE u.id = ? AND u.banned = 0`
+     WHERE u.id = ? AND u.banned = 0 AND u.role = 'user'`
   )
     .bind(id)
     .first<any>();
@@ -105,12 +117,14 @@ app.get("/team/:id", async (c) => {
   const id = Number(c.req.param("id"));
   const team = await c.env.DB.prepare(
     `SELECT t.id, t.name, t.affiliation, t.country, t.website, t.created_at, t.hidden, b.name AS bracket_name
-     FROM teams t LEFT JOIN brackets b ON b.id = t.bracket_id WHERE t.id = ? AND t.banned = 0`
+     FROM teams t LEFT JOIN brackets b ON b.id = t.bracket_id
+     WHERE t.id = ? AND t.banned = 0
+       AND NOT EXISTS (SELECT 1 FROM users admin_user WHERE admin_user.team_id = t.id AND admin_user.role = 'admin')`
   )
     .bind(id)
     .first<any>();
   if (!team) return c.json({ error: "Not found" }, 404);
-  const members = await c.env.DB.prepare("SELECT id, name, is_captain FROM users WHERE team_id = ?").bind(id).all();
+  const members = await c.env.DB.prepare("SELECT id, name, is_captain FROM users WHERE team_id = ? AND role = 'user'").bind(id).all();
   const stats = await buildStats(c, "team_id", id, "teams");
   return c.json({ team, members: members.results, stats });
 });

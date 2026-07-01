@@ -4,12 +4,8 @@ import { api, ApiError } from "../../api";
 import { useStore } from "../../store";
 
 const THEMES = [
-  { id: "midnight", label: "Midnight", swatch: "#0a0e14", accent: "#38bdf8" },
-  { id: "hacker", label: "Hacker Green", swatch: "#050a07", accent: "#22c55e" },
-  { id: "synthwave", label: "Synthwave", swatch: "#190a2b", accent: "#e879f9" },
-  { id: "crimson", label: "Crimson", swatch: "#140a0a", accent: "#f43f5e" },
-  { id: "ocean", label: "Ocean", swatch: "#04141f", accent: "#06b6d4" },
-  { id: "light", label: "Light", swatch: "#eef2f7", accent: "#0284c7" },
+  { id: "idktheflag", label: "idktheflag", swatch: "#0a0a0c", accent: "#cf2336" },
+  { id: "light", label: "Light", swatch: "#f7f7f8", accent: "#cf2336" },
 ];
 
 export default function AdminAppearance() {
@@ -54,14 +50,14 @@ export default function AdminAppearance() {
 
       <div className="card space-y-4">
         <h2 className="font-semibold text-white">Theme</h2>
-        <div className="grid grid-cols-3 gap-3">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           {THEMES.map((t) => (
             <button
               key={t.id}
               onClick={() => setForm({ ...form, theme: t.id, accent: t.accent })}
-              className={`flex items-center gap-2 rounded-lg border p-3 text-sm transition ${form.theme === t.id ? "border-sky-500 bg-sky-500/10 text-accent" : "border-slate-700 text-slate-300 hover:bg-slate-800"}`}
+              className={`flex items-center gap-2 rounded-md border p-3 text-sm transition ${form.theme === t.id ? "badge-accent" : "border-slate-700 text-slate-300 hover:bg-slate-800"}`}
             >
-              <span className="h-5 w-5 rounded-full border border-slate-600" style={{ background: t.swatch }} />
+              <span className="h-5 w-5 rounded-md border border-slate-600" style={{ background: t.swatch }} />
               {t.label}
             </button>
           ))}

@@ -43,7 +43,7 @@ export default function Admin() {
         {item("/admin/logs", "Logs")}
         {item("/admin/pages", "Pages")}
         {item("/admin/brackets", "Brackets")}
-        {item("/admin/plugins", "Plugins")}
+        {item("/admin/webhooks", "Webhooks")}
         {item("/admin/appearance", "Appearance")}
         {item("/admin/settings", "Settings")}
       </aside>
@@ -59,7 +59,8 @@ export default function Admin() {
           <Route path="logs" element={<AdminLogs />} />
           <Route path="pages" element={<AdminPages />} />
           <Route path="brackets" element={<AdminBrackets />} />
-          <Route path="plugins" element={<AdminPlugins />} />
+          <Route path="webhooks" element={<AdminPlugins />} />
+          <Route path="plugins" element={<Navigate to="/admin/webhooks" />} />
           <Route path="appearance" element={<AdminAppearance />} />
           <Route path="settings" element={<Settings />} />
           <Route path="*" element={<Navigate to="/admin" />} />

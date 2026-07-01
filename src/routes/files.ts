@@ -16,7 +16,7 @@ function b64ToBytes(s: string): Uint8Array {
 // Download a challenge file (from R2 when available, else inline D1 storage).
 app.get("/:id", async (c) => {
   const cfg = await getConfig(c.env);
-  if (cfg.visibility === "private" && !c.var.user) return c.json({ error: "Forbidden" }, 403);
+  if ((cfg.visibility === "private" || cfg.site_lockdown) && !c.var.user) return c.json({ error: "Forbidden" }, 403);
 
   const id = Number(c.req.param("id"));
   const file = await c.env.DB.prepare(
@@ -35,7 +35,7 @@ app.get("/:id", async (c) => {
 
   const headers: Record<string, string> = {
     "Content-Type": file.content_type || "application/octet-stream",
-    "Content-Disposition": `attachment; filename="${String(file.name).replace(/"/g, "")}"`,
+    "Content-Disposition": `attachment; filename="${String(file.name).replace(/[\r\n"\\]/g, "")}"`,
     "X-Content-Type-Options": "nosniff",
   };
 

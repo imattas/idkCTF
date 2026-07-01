@@ -17,6 +17,7 @@ export default function AdminUsers() {
     queryFn: () => api.get<{ users: AdminUser[] }>("/admin/users"),
   });
   const [manageId, setManageId] = useState<number | null>(null);
+  const [creating, setCreating] = useState(false);
 
   const remove = async (id: number) => {
     if (!confirm("Delete this user?")) return;
@@ -25,7 +26,10 @@ export default function AdminUsers() {
 
   return (
     <div>
-      <h1 className="mb-6 text-2xl font-bold text-white">Users</h1>
+      <div className="mb-6 flex items-center justify-between">
+        <h1 className="text-2xl font-bold text-white">Users</h1>
+        <button className="btn-primary" onClick={() => setCreating(true)}>+ New user</button>
+      </div>
       <div className="card overflow-x-auto p-0">
         <table className="w-full text-sm">
           <thead>
@@ -58,8 +62,75 @@ export default function AdminUsers() {
           </tbody>
         </table>
       </div>
+      {creating && <CreateUserModal onClose={() => setCreating(false)} onSaved={refetch} />}
       {manageId != null && <UserModal id={manageId} self={manageId === me!.id} onClose={() => setManageId(null)} onSaved={refetch} />}
     </div>
+  );
+}
+
+function CreateUserModal({ onClose, onSaved }: { onClose: () => void; onSaved: () => void }) {
+  const [form, setForm] = useState({
+    name: "",
+    email: "",
+    password: "",
+    role: "user",
+    affiliation: "",
+    country: "",
+    website: "",
+    hidden: false,
+  });
+  const [msg, setMsg] = useState("");
+  const [busy, setBusy] = useState(false);
+  const set = (k: keyof typeof form, v: any) => setForm({ ...form, [k]: v });
+
+  const create = async () => {
+    setMsg("");
+    setBusy(true);
+    try {
+      await api.post("/admin/users", form);
+      onSaved();
+      onClose();
+    } catch (e) {
+      setMsg(e instanceof ApiError ? e.message : "Could not create user");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <Modal open onClose={onClose} title="New user">
+      <div className="space-y-4">
+        {msg && <div className="rounded-md border border-rose-700 bg-rose-950/50 p-2 text-sm text-rose-300">{msg}</div>}
+        <div><label className="label">Name</label><input className="input" value={form.name} onChange={(e) => set("name", e.target.value)} /></div>
+        <div><label className="label">Email</label><input className="input" type="email" value={form.email} onChange={(e) => set("email", e.target.value)} /></div>
+        <div><label className="label">Password</label><input className="input" type="password" value={form.password} onChange={(e) => set("password", e.target.value)} placeholder="Minimum 8 characters" /></div>
+        <div className="grid grid-cols-2 gap-4">
+          <div>
+            <label className="label">Role</label>
+            <select className="input" value={form.role} onChange={(e) => set("role", e.target.value)}>
+              <option value="user">user</option>
+              <option value="admin">admin</option>
+            </select>
+          </div>
+          <label className="mt-6 flex items-center gap-2 text-sm text-slate-300">
+            <input type="checkbox" checked={form.hidden} onChange={(e) => set("hidden", e.target.checked)} /> Hidden
+          </label>
+        </div>
+        <div className="grid grid-cols-2 gap-4">
+          <div><label className="label">Affiliation</label><input className="input" value={form.affiliation} onChange={(e) => set("affiliation", e.target.value)} /></div>
+          <div>
+            <label className="label">Country</label>
+            <select className="input" value={form.country} onChange={(e) => set("country", e.target.value)}>
+              <option value="">-</option>{COUNTRIES.map((c) => <option key={c} value={c}>{c}</option>)}
+            </select>
+          </div>
+        </div>
+        <div><label className="label">Website</label><input className="input" value={form.website} onChange={(e) => set("website", e.target.value)} /></div>
+        <button className="btn-primary w-full" onClick={create} disabled={busy || !form.name || !form.email || !form.password}>
+          {busy ? "Creating" : "Create user"}
+        </button>
+      </div>
+    </Modal>
   );
 }
 

@@ -1,33 +1,32 @@
 # idkCTF
 
+[![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/imattas/idkCTF)
+
 A full **CTFd-style capture-the-flag platform that runs entirely on Cloudflare** — Workers, D1, KV, and (optionally) R2. No origin server, no containers, no database to babysit.
-
-**Live:** https://cloudctf.imattas.workers.dev
-
----
 
 ## Features
 
 - **Auth & sessions** — register / login / logout, PBKDF2 password hashing (WebCrypto), HttpOnly cookie sessions stored in KV (revocable, 7-day TTL).
 - **Both competition modes** — run as **teams** or **individuals**; switch in Admin → Settings. Team mode has create/join (invite codes), captain, size limits.
 - **Both scoring models, per challenge** — **static** (fixed value) or **dynamic** (CTFd quadratic decay: value drops as more solve it). The scoreboard always reflects live values.
-- **Challenges** — categories, descriptions, connection info, multiple flags per challenge (`static`, case-insensitive, or `regex`), hidden/visible state, max-attempt limits, sort order.
+- **Challenges** — categories, descriptions, connection info, multiple flags per challenge (`static`, case-insensitive, or `regex`), draft/released state, max-attempt limits, sort order.
 - **Hints** — point-cost hints; unlocking deducts from score and is shared across a team.
 - **File attachments** — stored in **R2** when available, otherwise **inline in D1** (≤8 MB) so it works even without R2. Downloads stream through the Worker with access control.
 - **Scoreboard** — ranked standings with correct tiebreaks (earliest-to-reach wins), a score-over-time chart (Recharts), and **scoreboard freeze** support.
 - **Competition timing** — start / end times gate submissions; a countdown shows on the home page.
-- **Admin panel** — dashboard stats, full challenge editor (flags/hints/files), user & team management (hide/ban/role/delete), point awards (bonus/penalty), submission log, and all site settings.
+- **Admin panel** — dashboard stats, full challenge editor (flags/hints/files), manual user creation, user & team management (hide/ban/role/delete), point awards (bonus/penalty), submission log, and all site settings.
 - **First-run setup wizard** — creates the first admin and core config; locks itself after completion.
 
-### Configurability, plugins & integrations
+### Configurability & Integrations
 
-- **Plugin system** — built-in, config-driven integrations that fire on events. Ships with **Discord webhook** (solve / first-blood / registration announcements, with embeds + role mentions) and a **generic webhook** (HMAC-signed JSON POST to any URL). Enable/configure/test each from Admin → Plugins. A first blood also satisfies "solve" subscribers.
+- **Discord webhooks** — configurable solve / first-blood / registration announcements with embeds, mentions, templates, and single-event tests. Manage them from Admin -> Webhooks.
 - **Event & audit logging** — every meaningful action is logged: challenge views, flag submissions (correct/incorrect), solves, first bloods, hint unlocks, logins, registrations, team create/join. Each event records the **IP, country, ASN, AS organization, Cloudflare colo, user-agent**, and a **heuristic VPN/proxy flag** (based on the connecting network's AS org). Browse/filter it in Admin → Logs.
 - **VPN/proxy controls** — optionally **block submissions** from detected VPN/proxy networks; blocked attempts are logged.
-- **Themes & branding** — 6 preset themes (Midnight, Hacker Green, Synthwave, Crimson, Ocean, Light), a live **accent colour** picker, **logo + favicon upload** (R2 or inline D1), **custom CSS**, and **footer HTML** — all in Admin → Appearance.
+- **Themes & branding** — idktheflag-style defaults, a live **accent color** picker, **logo + favicon upload** (R2 or inline D1), **custom CSS**, and **footer HTML** — all in Admin -> Appearance.
 - **Email (Cloudflare Email Sending)** — welcome emails on registration + admin test sends via the `send_email` Worker binding. Configure the from-address (on an onboarded domain) and toggles in Admin → Settings.
-- **User API tokens** — users mint personal tokens in their profile and call the API with `Authorization: Bearer <token>` (challenges, submissions, scoreboard, etc.). Tokens are stored hashed; shown once.
-- **More site controls** — pause submissions (lockdown), allow/forbid display-name changes, toggle challenge-view logging, scoreboard freeze, and the rest of the CTFd-style knobs.
+- **Access controls** — site lockdown for private build-out, public signup toggle for CTF start, access-code registration, and private/public visibility.
+- **Crawler controls** — `robots.txt` and `X-Robots-Tag` defaults tell search engines and AI crawlers not to index or train on the site.
+- **More site controls** — pause submissions, allow/forbid display-name changes, toggle challenge-view logging, scoreboard freeze, and the rest of the CTFd-style knobs.
 
 ## Architecture
 
@@ -71,7 +70,7 @@ Open http://localhost:5173 and complete the setup wizard.
 
 ```bash
 # one-time: create resources, then put the IDs in wrangler.jsonc
-npx wrangler d1 create cloudctf
+npx wrangler d1 create idkctf
 npx wrangler kv namespace create SESSIONS
 
 npm run db:migrate           # apply schema to remote D1
@@ -85,7 +84,7 @@ npm run deploy               # vite build && wrangler deploy
 The platform stores files inline in D1 by default. To use R2 for larger attachments:
 
 ```bash
-npx wrangler r2 bucket create cloudctf-files
+npx wrangler r2 bucket create idkctf-files
 ```
 
 Then uncomment the `r2_buckets` block at the bottom of `wrangler.jsonc` and redeploy. The Worker detects the `FILES` binding automatically.
@@ -94,10 +93,10 @@ Then uncomment the `r2_buckets` block at the bottom of `wrangler.jsonc` and rede
 
 Log in with the admin account created during setup, then open **Admin** in the nav:
 
-- **Challenges** — create challenges, attach flags/hints/files, toggle visible.
+- **Challenges** — create challenge drafts, attach flags/hints/files, then release or hide them.
 - **Users / Teams** — hide, ban, change roles, grant point awards, delete.
 - **Submissions** — full audit log (correct/incorrect, IP, time).
-- **Settings** — mode, visibility, registration, scoreboard visibility, start/end/freeze times.
+- **Settings** — mode, visibility, site lockdown, public signup toggle, scoreboard visibility, start/end/freeze times.
 
 ## Scoring formulas
 

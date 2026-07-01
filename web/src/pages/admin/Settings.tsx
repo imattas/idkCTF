@@ -29,7 +29,7 @@ export default function Settings() {
     },
   });
 
-  if (!form) return <p className="text-slate-500">Loading…</p>;
+  if (!form) return <p className="text-slate-500">Loading...</p>;
 
   const set = (k: string, v: any) => setForm({ ...form, [k]: v });
 
@@ -41,6 +41,7 @@ export default function Settings() {
       mode: form.mode,
       team_size_limit: Number(form.team_size_limit) || 0,
       registration_open: !!form.registration_open,
+      site_lockdown: !!form.site_lockdown,
       visibility: form.visibility,
       scoreboard_visible: !!form.scoreboard_visible,
       start_time: form.start_time || null,
@@ -66,7 +67,7 @@ export default function Settings() {
 
   const sendTest = async () => {
     setMsg("");
-    try { await api.post("/admin/email/test", {}); setMsg("Test email sent ✓"); }
+    try { await api.post("/admin/email/test", {}); setMsg("Test email sent."); }
     catch (e) { setMsg(e instanceof ApiError ? `Email failed: ${e.message}` : "Email failed"); }
   };
 
@@ -88,12 +89,15 @@ export default function Settings() {
                 <option value="users">Individuals</option>
               </select>
             </div>
-            <div><label className="label">Team size limit (0=∞)</label><input className="input" type="number" value={form.team_size_limit} onChange={(e) => set("team_size_limit", e.target.value)} /></div>
+            <div><label className="label">Team size limit (0 = unlimited)</label><input className="input" type="number" value={form.team_size_limit} onChange={(e) => set("team_size_limit", e.target.value)} /></div>
           </div>
         </div>
 
         <div className="card space-y-4">
           <h2 className="font-semibold text-white">Access</h2>
+          <label className="flex items-center gap-2 text-sm text-slate-300">
+            <input type="checkbox" checked={!!form.site_lockdown} onChange={(e) => set("site_lockdown", e.target.checked)} /> Site lockdown: only existing accounts can access the platform
+          </label>
           <div className="grid grid-cols-2 gap-4">
             <div>
               <label className="label">Visibility</label>
@@ -104,8 +108,9 @@ export default function Settings() {
             </div>
           </div>
           <label className="flex items-center gap-2 text-sm text-slate-300">
-            <input type="checkbox" checked={!!form.registration_open} onChange={(e) => set("registration_open", e.target.checked)} /> Registration open
+            <input type="checkbox" checked={!!form.registration_open} onChange={(e) => set("registration_open", e.target.checked)} /> Allow public signups
           </label>
+          <p className="text-xs text-slate-500">Turn public signups off once the CTF starts to reduce alt-account abuse on attempt-limited challenges. Use Admin - Users to create accounts manually while locked down.</p>
           <label className="flex items-center gap-2 text-sm text-slate-300">
             <input type="checkbox" checked={!!form.scoreboard_visible} onChange={(e) => set("scoreboard_visible", e.target.checked)} /> Scoreboard visible to players
           </label>

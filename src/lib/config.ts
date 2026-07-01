@@ -7,6 +7,7 @@ export interface SiteConfig {
   mode: "teams" | "users"; // team-based or individual
   team_size_limit: number; // 0 = unlimited
   registration_open: boolean;
+  site_lockdown: boolean; // require an existing account; disables public registration
   visibility: "public" | "private"; // private => must be logged in to see challenges/scoreboard
   scoreboard_visible: boolean;
   freeze_time: number | null; // epoch seconds; scoreboard frozen after this
@@ -39,11 +40,12 @@ export interface SiteConfig {
 
 const DEFAULTS: SiteConfig = {
   setup_complete: false,
-  ctf_name: "CloudCTF",
-  ctf_description: "A capture-the-flag competition running on Cloudflare.",
+  ctf_name: "idkCTF",
+  ctf_description: "A capture-the-flag competition by idktheflag.",
   mode: "teams",
   team_size_limit: 0,
   registration_open: true,
+  site_lockdown: false,
   visibility: "private",
   scoreboard_visible: true,
   freeze_time: null,
@@ -58,8 +60,8 @@ const DEFAULTS: SiteConfig = {
   access_code: "",
   auto_review: true,
   review_fast_solve_seconds: 30,
-  theme: "midnight",
-  accent: "#38bdf8",
+  theme: "idktheflag",
+  accent: "#cf2336",
   custom_css: "",
   footer_html: "",
   home_content: "",
@@ -67,7 +69,7 @@ const DEFAULTS: SiteConfig = {
   custom_head: "",
   email_enabled: false,
   email_from: "",
-  email_from_name: "CloudCTF",
+  email_from_name: "idkCTF",
   email_on_register: false,
 };
 

@@ -65,7 +65,7 @@ export interface LogOpts {
   metadata?: Record<string, unknown>;
 }
 
-// Record an event and fan it out to enabled plugins (non-blocking).
+// Record an event and fan it out to enabled webhooks (non-blocking).
 export async function logEvent(c: AppContext, type: string, opts: LogOpts = {}): Promise<void> {
   const meta = extractMeta(c);
   const user = c.var.user;
@@ -94,7 +94,7 @@ export async function logEvent(c: AppContext, type: string, opts: LogOpts = {}):
     console.error("logEvent insert failed", e);
   }
 
-  // Fan out to plugins in the background.
+  // Fan out to webhooks in the background.
   const payload = {
     type,
     actor: user ? { id: user.id, name: user.name } : null,

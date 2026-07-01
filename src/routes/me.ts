@@ -38,8 +38,8 @@ app.get("/submissions", async (c) => {
   if (a.id == null) return c.json({ submissions: [] });
   const rows = await c.env.DB.prepare(
     `SELECT s.id, s.challenge_id, ch.name AS challenge, s.provided, s.correct, s.created_at, su.name AS by_user
-     FROM submissions s JOIN challenges ch ON ch.id = s.challenge_id LEFT JOIN users su ON su.id = s.user_id
-     WHERE s.${a.col} = ? ORDER BY s.id DESC LIMIT 200`
+     FROM submissions s JOIN challenges ch ON ch.id = s.challenge_id JOIN users su ON su.id = s.user_id
+     WHERE s.${a.col} = ? AND su.role = 'user' ORDER BY s.id DESC LIMIT 200`
   ).bind(a.id).all();
   return c.json({ submissions: rows.results });
 });
@@ -50,8 +50,8 @@ app.get("/solves", async (c) => {
   if (a.id == null) return c.json({ solves: [] });
   const rows = await c.env.DB.prepare(
     `SELECT s.id, s.challenge_id, ch.name AS challenge, ch.category, s.created_at, su.name AS by_user
-     FROM solves s JOIN challenges ch ON ch.id = s.challenge_id LEFT JOIN users su ON su.id = s.user_id
-     WHERE s.${a.col} = ? ORDER BY s.created_at DESC`
+     FROM solves s JOIN challenges ch ON ch.id = s.challenge_id JOIN users su ON su.id = s.user_id
+     WHERE s.${a.col} = ? AND su.role = 'user' ORDER BY s.created_at DESC`
   ).bind(a.id).all();
   return c.json({ solves: rows.results });
 });

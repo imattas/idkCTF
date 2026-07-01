@@ -3,7 +3,6 @@ import type { Env, Variables } from "./types";
 import { loadUser } from "./middleware/auth";
 import { getConfig, competitionState } from "./lib/config";
 import { nowSeconds } from "./lib/validate";
-import { buildOpenApi } from "./lib/openapi";
 
 import setup from "./routes/setup";
 import auth from "./routes/auth";
@@ -31,6 +30,7 @@ api.use("*", async (c, next) => {
   try {
     c.header("X-Content-Type-Options", "nosniff");
     c.header("Referrer-Policy", "strict-origin-when-cross-origin");
+    c.header("X-Robots-Tag", "noindex, nofollow, noarchive, noimageindex");
   } catch {}
 });
 api.use("*", loadUser);
@@ -40,8 +40,6 @@ api.get("/bootstrap", async (c) => {
   const cfg = await getConfig(c.env);
   const u = c.var.user;
   const logo = await c.env.DB.prepare("SELECT 1 FROM branding WHERE key = 'logo'").first();
-  const feats = await c.env.DB.prepare("SELECT name FROM plugins WHERE enabled = 1 AND name IN ('challenge_reviews','writeups')").all<{ name: string }>();
-  const featNames = new Set(feats.results.map((f) => f.name));
   return c.json({
     config: {
       setup_complete: cfg.setup_complete,
@@ -49,6 +47,7 @@ api.get("/bootstrap", async (c) => {
       ctf_description: cfg.ctf_description,
       mode: cfg.mode,
       registration_open: cfg.registration_open,
+      site_lockdown: cfg.site_lockdown,
       visibility: cfg.visibility,
       scoreboard_visible: cfg.scoreboard_visible,
       start_time: cfg.start_time,
@@ -66,21 +65,22 @@ api.get("/bootstrap", async (c) => {
       has_logo: !!logo,
       require_access_code: cfg.require_access_code,
     },
-    features: { reviews: featNames.has("challenge_reviews"), writeups: featNames.has("writeups") },
     competition_state: competitionState(cfg, nowSeconds()),
     server_time: nowSeconds(),
     user: u
-      ? { id: u.id, name: u.name, email: u.email, role: u.role, team_id: u.team_id, is_captain: u.is_captain }
+      ? {
+          id: u.id,
+          name: u.name,
+          email: u.email,
+          role: u.role,
+          team_id: u.team_id,
+          is_captain: u.is_captain,
+          affiliation: u.affiliation,
+          country: u.country,
+          website: u.website,
+        }
       : null,
   });
-});
-
-// Machine-readable API spec (downloadable from the docs page).
-api.get("/openapi.json", async (c) => {
-  const cfg = await getConfig(c.env);
-  const origin = new URL(c.req.url).origin;
-  c.header("Content-Disposition", "attachment; filename=cloudctf-openapi.json");
-  return c.json(buildOpenApi(origin, cfg.ctf_name));
 });
 
 api.route("/setup", setup);
@@ -106,6 +106,7 @@ api.onError((err, c) => {
 });
 
 app.route("/api", api);
+app.all("/api/*", (c) => c.json({ error: "Not found" }, 404));
 
 // Everything else => static SPA assets (wrangler serves index.html for unknown
 // routes). Add security headers (clickjacking / MIME-sniff protection).
@@ -115,6 +116,7 @@ app.all("*", async (c) => {
   out.headers.set("X-Content-Type-Options", "nosniff");
   out.headers.set("X-Frame-Options", "SAMEORIGIN");
   out.headers.set("Referrer-Policy", "strict-origin-when-cross-origin");
+  out.headers.set("X-Robots-Tag", "noindex, nofollow, noarchive, noimageindex");
   return out;
 });
 

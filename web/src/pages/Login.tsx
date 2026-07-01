@@ -26,8 +26,13 @@ export default function Login() {
   };
 
   return (
-    <div className="mx-auto max-w-md">
-      <h1 className="mb-6 text-2xl font-bold text-white">Log in</h1>
+    <div className="mx-auto max-w-md page-stack">
+      <section className="page-header">
+        <div>
+          <div className="page-kicker">Account</div>
+          <h1 className="page-title">Log in</h1>
+        </div>
+      </section>
       {err && <div className="mb-4 rounded-md border border-rose-700 bg-rose-950/50 p-3 text-sm text-rose-300">{err}</div>}
       <form onSubmit={submit} className="card space-y-4">
         <div>
@@ -38,11 +43,11 @@ export default function Login() {
           <label className="label">Password</label>
           <input className="input" type="password" value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} required />
         </div>
-        <button className="btn-primary w-full" disabled={busy}>{busy ? "…" : "Log in"}</button>
+        <button className="btn-primary w-full" disabled={busy}>{busy ? "Logging in" : "Log in"}</button>
       </form>
-      {config.registration_open && (
-        <p className="mt-4 text-center text-sm text-slate-400">
-          No account? <Link to="/register" className="text-sky-400 hover:underline">Register</Link>
+      {config.registration_open && !config.site_lockdown && (
+        <p className="text-center text-sm text-slate-400">
+          No account? <Link to="/register" className="text-[var(--accent-strong)] hover:underline">Register</Link>
         </p>
       )}
     </div>

@@ -4,7 +4,7 @@ import { requireAdmin } from "../middleware/auth";
 import { getConfig, setConfig } from "../lib/config";
 import { randomToken, hashPassword } from "../lib/auth";
 import { nowSeconds } from "../lib/validate";
-import { listPlugins, savePlugin, getPlugin, deliverDiscord, listWebhooks, getWebhook, createWebhook, updateWebhook, deleteWebhook } from "../lib/plugins";
+import { deliverDiscord, listWebhooks, getWebhook, createWebhook, updateWebhook, deleteWebhook } from "../lib/plugins";
 import { sendEmail } from "../lib/email";
 import { logEvent, EVENTS } from "../lib/events";
 import { listBans, addBan, removeBan } from "../lib/bans";
@@ -13,6 +13,7 @@ const app = new Hono<{ Bindings: Env; Variables: Variables }>();
 app.use("*", requireAdmin);
 
 const INLINE_LIMIT = 8 * 1024 * 1024; // 8MB max for D1 inline file storage
+const EMAIL_RE = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
 
 function bytesToB64(bytes: Uint8Array): string {
   let bin = "";
@@ -21,6 +22,13 @@ function bytesToB64(bytes: Uint8Array): string {
     bin += String.fromCharCode(...bytes.subarray(i, i + chunk));
   }
   return btoa(bin);
+}
+
+async function readChallengeReleaseStatus(env: Env, id: number) {
+  return env.DB.prepare(
+    `SELECT ch.name, ch.state, (SELECT COUNT(*) FROM flags f WHERE f.challenge_id = ch.id) AS flag_count
+     FROM challenges ch WHERE ch.id = ?`
+  ).bind(id).first<{ name: string; state: string; flag_count: number }>();
 }
 
 /* ---------------- Config & stats ---------------- */
@@ -35,7 +43,7 @@ app.patch("/config", async (c) => {
   const body = await c.req.json().catch(() => ({}));
   const allowed = [
     "ctf_name", "ctf_description", "mode", "team_size_limit", "registration_open",
-    "visibility", "scoreboard_visible", "freeze_time", "start_time", "end_time",
+    "site_lockdown", "visibility", "scoreboard_visible", "freeze_time", "start_time", "end_time",
     "paused", "block_vpn", "block_vpn_signup", "allow_name_change", "log_challenge_views",
     "require_access_code", "access_code", "auto_review", "review_fast_solve_seconds",
     "theme", "accent", "custom_css", "footer_html", "home_content", "home_format", "custom_head",
@@ -94,17 +102,19 @@ app.get("/challenges/:id", async (c) => {
 app.post("/challenges", async (c) => {
   const b = await c.req.json().catch(() => ({}));
   if (!b.name) return c.json({ error: "Name required" }, 400);
+  if (b.state === "visible") {
+    return c.json({ error: "Create the challenge hidden, add at least one flag, then release it." }, 400);
+  }
   const res = await c.env.DB.prepare(
-    `INSERT INTO challenges (name, category, description, connection_info, type, state, value, initial, minimum, decay, max_attempts, sort_order, prerequisites, tags, created_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    `INSERT INTO challenges (name, category, description, connection_info, type, state, value, initial, minimum, decay, max_attempts, sort_order, prerequisites, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
   )
     .bind(
       b.name, b.category || "misc", b.description || "", b.connection_info || null,
-      b.type === "dynamic" ? "dynamic" : "static", b.state === "visible" ? "visible" : "hidden",
+      b.type === "dynamic" ? "dynamic" : "static", "hidden",
       Number(b.value ?? b.initial ?? 100), b.initial ?? null, b.minimum ?? null, b.decay ?? null,
       Number(b.max_attempts ?? 0), Number(b.sort_order ?? 0),
       Array.isArray(b.prerequisites) && b.prerequisites.length ? JSON.stringify(b.prerequisites) : null,
-      Array.isArray(b.tags) && b.tags.length ? JSON.stringify(b.tags) : null,
       nowSeconds()
     )
     .run();
@@ -115,6 +125,14 @@ app.post("/challenges", async (c) => {
 app.patch("/challenges/:id", async (c) => {
   const id = Number(c.req.param("id"));
   const b = await c.req.json().catch(() => ({}));
+  if ("state" in b) {
+    b.state = b.state === "visible" ? "visible" : "hidden";
+    if (b.state === "visible") {
+      const release = await readChallengeReleaseStatus(c.env, id);
+      if (!release) return c.json({ error: "Not found" }, 404);
+      if ((release.flag_count ?? 0) < 1) return c.json({ error: "Add at least one flag before releasing this challenge." }, 400);
+    }
+  }
   const cols = [
     "name", "category", "description", "connection_info", "type", "state",
     "value", "initial", "minimum", "decay", "max_attempts", "sort_order",
@@ -126,15 +144,30 @@ app.patch("/challenges/:id", async (c) => {
     sets.push("prerequisites = ?");
     binds.push(Array.isArray(b.prerequisites) && b.prerequisites.length ? JSON.stringify(b.prerequisites) : null);
   }
-  if ("tags" in b) {
-    sets.push("tags = ?");
-    binds.push(Array.isArray(b.tags) && b.tags.length ? JSON.stringify(b.tags) : null);
-  }
   if (!sets.length) return c.json({ ok: true });
   binds.push(id);
   await c.env.DB.prepare(`UPDATE challenges SET ${sets.join(", ")} WHERE id = ?`).bind(...binds).run();
   const nm = await c.env.DB.prepare("SELECT name FROM challenges WHERE id = ?").bind(id).first<{ name: string }>();
   await logEvent(c, EVENTS.CHALLENGE_UPDATE, { challenge_id: id, message: nm?.name ?? `#${id}` });
+  return c.json({ ok: true });
+});
+
+app.post("/challenges/:id/release", async (c) => {
+  const id = Number(c.req.param("id"));
+  const release = await readChallengeReleaseStatus(c.env, id);
+  if (!release) return c.json({ error: "Not found" }, 404);
+  if ((release.flag_count ?? 0) < 1) return c.json({ error: "Add at least one flag before releasing this challenge." }, 400);
+  await c.env.DB.prepare("UPDATE challenges SET state = 'visible' WHERE id = ?").bind(id).run();
+  await logEvent(c, EVENTS.CHALLENGE_UPDATE, { challenge_id: id, message: `Released ${release.name}` });
+  return c.json({ ok: true });
+});
+
+app.post("/challenges/:id/hide", async (c) => {
+  const id = Number(c.req.param("id"));
+  const release = await readChallengeReleaseStatus(c.env, id);
+  if (!release) return c.json({ error: "Not found" }, 404);
+  await c.env.DB.prepare("UPDATE challenges SET state = 'hidden' WHERE id = ?").bind(id).run();
+  await logEvent(c, EVENTS.CHALLENGE_UPDATE, { challenge_id: id, message: `Hid ${release.name}` });
   return c.json({ ok: true });
 });
 
@@ -189,7 +222,15 @@ app.post("/challenges/:id/flags", async (c) => {
 });
 
 app.delete("/flags/:id", async (c) => {
-  await c.env.DB.prepare("DELETE FROM flags WHERE id = ?").bind(Number(c.req.param("id"))).run();
+  const id = Number(c.req.param("id"));
+  const flag = await c.env.DB.prepare("SELECT challenge_id FROM flags WHERE id = ?").bind(id).first<{ challenge_id: number }>();
+  await c.env.DB.prepare("DELETE FROM flags WHERE id = ?").bind(id).run();
+  if (flag?.challenge_id) {
+    const count = await c.env.DB.prepare("SELECT COUNT(*) AS n FROM flags WHERE challenge_id = ?").bind(flag.challenge_id).first<{ n: number }>();
+    if ((count?.n ?? 0) === 0) {
+      await c.env.DB.prepare("UPDATE challenges SET state = 'hidden' WHERE id = ?").bind(flag.challenge_id).run();
+    }
+  }
   return c.json({ ok: true });
 });
 
@@ -265,6 +306,40 @@ app.get("/users", async (c) => {
   return c.json({ users: rows.results });
 });
 
+app.post("/users", async (c) => {
+  const b = await c.req.json().catch(() => ({}));
+  const name = String(b.name || "").trim();
+  const email = String(b.email || "").trim().toLowerCase();
+  const password = String(b.password || "");
+  if (!name || !email || !password) return c.json({ error: "Name, email and password are required" }, 400);
+  if (!EMAIL_RE.test(email)) return c.json({ error: "Invalid email" }, 400);
+  if (password.length < 8) return c.json({ error: "Password must be at least 8 characters" }, 400);
+
+  const exists = await c.env.DB.prepare("SELECT id FROM users WHERE email = ? OR name = ?").bind(email, name).first();
+  if (exists) return c.json({ error: "A user with that name or email already exists" }, 409);
+
+  const role = b.role === "admin" ? "admin" : "user";
+  const res = await c.env.DB.prepare(
+    `INSERT INTO users (name, email, password_hash, role, hidden, affiliation, country, website, bracket_id, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+  )
+    .bind(
+      name,
+      email,
+      await hashPassword(password),
+      role,
+      role === "admin" ? 1 : (b.hidden ? 1 : 0),
+      b.affiliation || null,
+      b.country || null,
+      b.website || null,
+      b.bracket_id || null,
+      nowSeconds()
+    )
+    .run();
+  await logEvent(c, EVENTS.ADMIN_ACTION, { message: `Created ${role} user ${name}` });
+  return c.json({ ok: true, id: res.meta.last_row_id });
+});
+
 app.patch("/users/:id", async (c) => {
   const id = Number(c.req.param("id"));
   const b = await c.req.json().catch(() => ({}));
@@ -277,6 +352,7 @@ app.patch("/users/:id", async (c) => {
   const cols = ["role", "hidden", "banned", "name", "email", "affiliation", "country", "website", "bracket_id", "team_id", "is_captain"];
   const sets: string[] = [];
   const binds: any[] = [];
+  if (b.role === "admin") b.hidden = 1;
   for (const col of cols) if (col in b) { sets.push(`${col} = ?`); binds.push(b[col] === "" ? null : b[col]); }
   if (b.password) {
     if (String(b.password).length < 8) return c.json({ error: "Password too short" }, 400);
@@ -316,8 +392,9 @@ app.post("/users/:id/grant-solve", async (c) => {
   const b = await c.req.json().catch(() => ({}));
   const challengeId = Number(b.challenge_id);
   if (!challengeId) return c.json({ error: "challenge_id required" }, 400);
-  const u = await c.env.DB.prepare("SELECT team_id FROM users WHERE id = ?").bind(id).first<{ team_id: number | null }>();
+  const u = await c.env.DB.prepare("SELECT team_id, role FROM users WHERE id = ?").bind(id).first<{ team_id: number | null; role: string }>();
   if (!u) return c.json({ error: "User not found" }, 404);
+  if (u.role !== "user") return c.json({ error: "Admin accounts cannot receive scored solves" }, 400);
   await c.env.DB.prepare(
     "INSERT OR IGNORE INTO solves (challenge_id, user_id, team_id, created_at) VALUES (?, ?, ?, ?)"
   ).bind(challengeId, id, u.team_id, nowSeconds()).run();
@@ -470,38 +547,7 @@ app.get("/events", async (c) => {
   return c.json({ events: rows.results, types: types.results.map((t) => t.type), page });
 });
 
-/* ---------------- Plugins ---------------- */
-
-app.get("/plugins", async (c) => c.json({ plugins: await listPlugins(c.env) }));
-
-app.put("/plugins/:name", async (c) => {
-  const name = c.req.param("name");
-  const body = await c.req.json().catch(() => ({}));
-  await savePlugin(c.env, name, !!body.enabled, body.config ?? {});
-  await logEvent(c, EVENTS.ADMIN_ACTION, { message: `Updated plugin ${name}` });
-  return c.json({ ok: true });
-});
-
-app.post("/plugins/:name/test", async (c) => {
-  const name = c.req.param("name");
-  const p = await getPlugin(c.env, name);
-  if (!p) return c.json({ error: "Unknown plugin" }, 404);
-  const payload = {
-    type: "test", actor: { id: c.var.user!.id, name: c.var.user!.name },
-    challenge_id: null, challenge_name: "Test Challenge", team_id: null,
-    message: "This is a test event from CloudCTF", metadata: {}, ip: null, is_vpn: false,
-    at: nowSeconds(),
-  };
-  try {
-    if (name === "discord_webhook") await deliverDiscord(p.config, "solve", payload);
-    else return c.json({ error: "This plugin has no test action" }, 400);
-    return c.json({ ok: true });
-  } catch (e: any) {
-    return c.json({ error: e?.message || "Delivery failed" }, 502);
-  }
-});
-
-/* ---------------- Webhooks (multiple Discord targets) ---------------- */
+/* ---------------- Discord webhooks ---------------- */
 
 app.get("/webhooks", async (c) => c.json({ webhooks: await listWebhooks(c.env) }));
 
@@ -531,13 +577,11 @@ app.post("/webhooks/:id/test", async (c) => {
     challenge_id: null, challenge_name: "Test Challenge", team_id: null, team_name: "Test Team",
     metadata: {}, ip: "203.0.113.1", is_vpn: false, at: nowSeconds(),
   };
-  // Fire one test per subscribed event so each event's template/format is exercised.
   const events: string[] = Array.isArray(w.config.events) && w.config.events.length ? w.config.events : ["solve"];
+  const ev = events.includes(w.config.test_event) ? String(w.config.test_event) : events[0];
   try {
-    for (const ev of events) {
-      await deliverDiscord(w.config, ev, { ...base, type: ev, message: `Test of "${ev}" event` });
-    }
-    return c.json({ ok: true, sent: events.length });
+    await deliverDiscord(w.config, ev, { ...base, type: ev, message: `Test of "${ev}" event` });
+    return c.json({ ok: true, sent: 1, event: ev });
   } catch (e: any) {
     return c.json({ error: e?.message || "Delivery failed" }, 502);
   }

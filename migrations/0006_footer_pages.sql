@@ -22,7 +22,7 @@ INSERT INTO pages (slug, title, content, format, published, footer, nav, nav_ord
 By creating an account and participating, you agree to the following:
 
 - You are responsible for activity under your account and for keeping your credentials secure.
-- Content you submit (team names, profiles, writeups) must not be illegal, offensive, or infringing.
+- Content you submit (team names and profiles) must not be illegal, offensive, or infringing.
 - The organizers may modify, suspend, or remove accounts that violate the rules.
 - The competition and this platform are provided "as is" without warranty of any kind.
 - Personal data you provide is used solely to operate the competition.

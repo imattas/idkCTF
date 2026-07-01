@@ -17,6 +17,7 @@ const EMAIL_RE = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
 app.post("/register", async (c) => {
   const cfg = await getConfig(c.env);
   if (!cfg.setup_complete) return c.json({ error: "Site not set up yet" }, 400);
+  if (cfg.site_lockdown) return c.json({ error: "Registration is disabled while the site is locked down" }, 403);
   if (!cfg.registration_open) return c.json({ error: "Registration is closed" }, 403);
 
   const body = await c.req.json().catch(() => ({}));
@@ -56,7 +57,7 @@ app.post("/register", async (c) => {
   const userId = res.meta.last_row_id as number;
   const token = await createSession(c.env, userId);
   c.header("Set-Cookie", sessionCookie(token));
-  c.set("user", { id: userId, name, email, role: "user", team_id: null, is_captain: 0 });
+  c.set("user", { id: userId, name, email, role: "user", team_id: null, is_captain: 0, affiliation: body.affiliation || null, country: body.country || null, website: body.website || null });
   await logEvent(c, EVENTS.REGISTER, { message: name });
 
   if (cfg.email_on_register && canEmail) {
@@ -88,7 +89,7 @@ app.post("/login", async (c) => {
 
   const token = await createSession(c.env, user.id);
   c.header("Set-Cookie", sessionCookie(token));
-  c.set("user", { id: user.id, name: "", email: "", role: "user", team_id: null, is_captain: 0 });
+  c.set("user", { id: user.id, name: "", email: "", role: "user", team_id: null, is_captain: 0, affiliation: null, country: null, website: null });
   await logEvent(c, EVENTS.LOGIN, {});
   return c.json({ ok: true });
 });

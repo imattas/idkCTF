@@ -52,5 +52,5 @@ CREATE TABLE branding (
 
 -- Seed built-in plugins (disabled by default).
 INSERT INTO plugins (name, enabled, config) VALUES
-  ('discord_webhook', 0, '{"url":"","events":["solve","first_blood"],"username":"CloudCTF","mention":""}'),
+  ('discord_webhook', 0, '{"url":"","events":["solve","first_blood"],"username":"idkCTF","mention":""}'),
   ('generic_webhook', 0, '{"url":"","events":["solve","first_blood","auth.register"],"secret":""}');

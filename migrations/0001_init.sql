@@ -1,4 +1,4 @@
--- CloudCTF schema (D1 / SQLite)
+-- idkCTF schema (D1 / SQLite)
 -- A CTFd-style platform supporting both team & individual modes and
 -- per-challenge static or dynamic scoring.
 

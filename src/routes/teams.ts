@@ -34,6 +34,7 @@ app.get("/me", async (c) => {
 app.post("/create", async (c) => {
   if (!(await teamModeOnly(c))) return c.json({ error: "Not in team mode" }, 400);
   const u = c.var.user!;
+  if (u.role === "admin") return c.json({ error: "Admin accounts cannot join the competition as players" }, 403);
   if (u.team_id) return c.json({ error: "You are already on a team" }, 400);
   const body = await c.req.json().catch(() => ({}));
   const name = String(body.name || "").trim();
@@ -60,6 +61,7 @@ app.post("/create", async (c) => {
 app.post("/join", async (c) => {
   if (!(await teamModeOnly(c))) return c.json({ error: "Not in team mode" }, 400);
   const u = c.var.user!;
+  if (u.role === "admin") return c.json({ error: "Admin accounts cannot join the competition as players" }, 403);
   if (u.team_id) return c.json({ error: "You are already on a team" }, 400);
   const body = await c.req.json().catch(() => ({}));
   const code = String(body.invite_code || "").trim().toUpperCase();
@@ -90,7 +92,12 @@ app.post("/leave", async (c) => {
   const u = c.var.user!;
   if (!u.team_id) return c.json({ error: "Not on a team" }, 400);
   // Prevent leaving after the team has scored to avoid splitting solves.
-  const solved = await c.env.DB.prepare("SELECT 1 FROM solves WHERE team_id = ? LIMIT 1")
+  const solved = await c.env.DB.prepare(
+    `SELECT 1
+     FROM solves s JOIN users solver ON solver.id = s.user_id
+     WHERE solver.role = 'user' AND s.team_id = ?
+     LIMIT 1`
+  )
     .bind(u.team_id)
     .first();
   if (solved) return c.json({ error: "Cannot leave a team that has already solved challenges" }, 400);
@@ -113,12 +120,14 @@ app.post("/rotate-code", async (c) => {
 app.get("/:id", async (c) => {
   const id = Number(c.req.param("id"));
   const team = await c.env.DB.prepare(
-    "SELECT id, name, affiliation, country, website, created_at FROM teams WHERE id = ? AND banned = 0"
+    `SELECT id, name, affiliation, country, website, created_at FROM teams
+     WHERE id = ? AND banned = 0
+       AND NOT EXISTS (SELECT 1 FROM users admin_user WHERE admin_user.team_id = teams.id AND admin_user.role = 'admin')`
   )
     .bind(id)
     .first();
   if (!team) return c.json({ error: "Not found" }, 404);
-  const members = await c.env.DB.prepare("SELECT id, name FROM users WHERE team_id = ?").bind(id).all();
+  const members = await c.env.DB.prepare("SELECT id, name FROM users WHERE team_id = ? AND role = 'user'").bind(id).all();
   return c.json({ team, members: members.results });
 });
 

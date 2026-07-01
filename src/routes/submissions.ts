@@ -15,6 +15,7 @@ app.post("/:id", async (c) => {
   const challengeId = Number(c.req.param("id"));
   const cfg = await getConfig(c.env);
   const now = nowSeconds();
+  const isAdmin = u.role === "admin";
 
   const state = competitionState(cfg, now);
   if (state === "before") return c.json({ status: "closed", message: "Competition has not started" }, 403);
@@ -30,7 +31,7 @@ app.post("/:id", async (c) => {
     }
   }
 
-  if (cfg.mode === "teams" && !u.team_id)
+  if (!isAdmin && cfg.mode === "teams" && !u.team_id)
     return c.json({ status: "error", message: "Join a team before submitting" }, 400);
 
   // Simple per-user throttle to deter brute forcing. KV requires a TTL >= 60s,
@@ -38,7 +39,7 @@ app.post("/:id", async (c) => {
   const rlKey = `rl:submit:${u.id}`;
   const last = await c.env.SESSIONS.get(rlKey);
   if (last && now - Number(last) < THROTTLE_SECONDS)
-    return c.json({ status: "ratelimited", message: "Slow down — try again in a moment" }, 429);
+    return c.json({ status: "ratelimited", message: "Slow down. Try again in a moment." }, 429);
   await c.env.SESSIONS.put(rlKey, String(now), { expirationTtl: 60 });
 
   const ch = await c.env.DB.prepare(
@@ -54,10 +55,12 @@ app.post("/:id", async (c) => {
   // Prerequisite lock: all listed challenges must be solved by this account first.
   let prereqs: number[] = [];
   try { const a = JSON.parse(ch.prerequisites || "[]"); if (Array.isArray(a)) prereqs = a.map(Number); } catch {}
-  if (prereqs.length) {
+  if (!isAdmin && prereqs.length) {
     const ph = prereqs.map(() => "?").join(",");
     const solvedCount = await c.env.DB.prepare(
-      `SELECT COUNT(DISTINCT challenge_id) AS n FROM solves WHERE ${col} = ? AND challenge_id IN (${ph})`
+      `SELECT COUNT(DISTINCT s.challenge_id) AS n
+       FROM solves s JOIN users solver ON solver.id = s.user_id
+       WHERE solver.role = 'user' AND s.${col} = ? AND s.challenge_id IN (${ph})`
     )
       .bind(account, ...prereqs)
       .first<{ n: number }>();
@@ -66,18 +69,24 @@ app.post("/:id", async (c) => {
   }
 
   // Already solved?
-  const already = await c.env.DB.prepare(
-    `SELECT 1 FROM solves WHERE challenge_id = ? AND ${col} = ?`
-  )
-    .bind(challengeId, account)
-    .first();
-  if (already) return c.json({ status: "already_solved", message: "You already solved this" });
+  if (!isAdmin) {
+    const already = await c.env.DB.prepare(
+      `SELECT 1
+       FROM solves s JOIN users solver ON solver.id = s.user_id
+       WHERE solver.role = 'user' AND s.challenge_id = ? AND s.${col} = ?`
+    )
+      .bind(challengeId, account)
+      .first();
+    if (already) return c.json({ status: "already_solved", message: "You already solved this" });
+  }
 
-  // Attempt limit (count by account's incorrect submissions).
-  if (ch.max_attempts > 0) {
+  // Attempt limit counts every submitted guess from the scoring account.
+  if (!isAdmin && ch.max_attempts > 0) {
     const attemptCol = cfg.mode === "teams" ? "team_id" : "user_id";
     const cnt = await c.env.DB.prepare(
-      `SELECT COUNT(*) AS n FROM submissions WHERE challenge_id = ? AND ${attemptCol} = ?`
+      `SELECT COUNT(*) AS n
+       FROM submissions s JOIN users submitter ON submitter.id = s.user_id
+       WHERE submitter.role = 'user' AND s.challenge_id = ? AND s.${attemptCol} = ?`
     )
       .bind(challengeId, account)
       .first<{ n: number }>();
@@ -98,7 +107,7 @@ app.post("/:id", async (c) => {
   await c.env.DB.prepare(
     "INSERT INTO submissions (challenge_id, user_id, team_id, provided, correct, ip, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)"
   )
-    .bind(challengeId, u.id, u.team_id, submitted, correct ? 1 : 0, ip, now)
+    .bind(challengeId, u.id, isAdmin ? null : u.team_id, submitted, correct ? 1 : 0, ip, now)
     .run();
 
   await logEvent(c, EVENTS.FLAG_SUBMIT, {
@@ -108,9 +117,14 @@ app.post("/:id", async (c) => {
   });
 
   if (!correct) return c.json({ status: "incorrect", message: "Incorrect flag" });
+  if (isAdmin) return c.json({ status: "correct", message: "Correct (admin check; not scored)", admin_check: true });
 
   // Count prior solves to detect first blood.
-  const prior = await c.env.DB.prepare("SELECT COUNT(*) AS n FROM solves WHERE challenge_id = ?")
+  const prior = await c.env.DB.prepare(
+    `SELECT COUNT(*) AS n
+     FROM solves s JOIN users u ON u.id = s.user_id
+     WHERE s.challenge_id = ? AND u.role = 'user'`
+  )
     .bind(challengeId)
     .first<{ n: number }>();
 
@@ -131,7 +145,7 @@ app.post("/:id", async (c) => {
 
   if (cfg.auto_review) await autoReview(c, u, account!, col, challengeId, now, cfg.review_fast_solve_seconds);
 
-  return c.json({ status: "correct", message: firstBlood ? "🩸 FIRST BLOOD! 🎉" : "Correct! 🎉", first_blood: firstBlood });
+  return c.json({ status: "correct", message: firstBlood ? "First blood!" : "Correct!", first_blood: firstBlood });
 });
 
 // Flag suspicious solves: solved without ever viewing, suspiciously fast after
@@ -157,7 +171,10 @@ async function autoReview(c: AppContext, u: SessionUser, account: number, col: s
   }
 
   const prev = await c.env.DB.prepare(
-    `SELECT created_at FROM solves WHERE ${col} = ? AND challenge_id != ? ORDER BY created_at DESC LIMIT 1`
+    `SELECT s.created_at
+     FROM solves s JOIN users solver ON solver.id = s.user_id
+     WHERE solver.role = 'user' AND s.${col} = ? AND s.challenge_id != ?
+     ORDER BY s.created_at DESC LIMIT 1`
   ).bind(account, challengeId).first<{ created_at: number }>();
   if (prev && now - prev.created_at < 15) {
     await flag("rapid", `Two solves within ${now - prev.created_at}s`);

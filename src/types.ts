@@ -27,6 +27,9 @@ export interface SessionUser {
   role: "user" | "admin";
   team_id: number | null;
   is_captain: number;
+  affiliation: string | null;
+  country: string | null;
+  website: string | null;
 }
 
 export type Variables = {

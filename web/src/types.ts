@@ -4,6 +4,7 @@ export interface PublicConfig {
   ctf_description: string;
   mode: "teams" | "users";
   registration_open: boolean;
+  site_lockdown: boolean;
   visibility: "public" | "private";
   scoreboard_visible: boolean;
   start_time: number | null;
@@ -52,6 +53,9 @@ export interface CurrentUser {
   role: "user" | "admin";
   team_id: number | null;
   is_captain: number;
+  affiliation: string | null;
+  country: string | null;
+  website: string | null;
 }
 
 export interface Bootstrap {
@@ -59,7 +63,6 @@ export interface Bootstrap {
   competition_state: "before" | "running" | "ended";
   server_time: number;
   user: CurrentUser | null;
-  features: { reviews: boolean; writeups: boolean };
 }
 
 export interface ChallengeSummary {
@@ -72,19 +75,6 @@ export interface ChallengeSummary {
   solves: number;
   solved: boolean;
   locked: boolean;
-  tags: string[];
-}
-
-export interface Review {
-  rating: number;
-  comment: string | null;
-  created_at: number;
-  name: string;
-}
-export interface Writeup {
-  url: string;
-  created_at: number;
-  name: string;
 }
 
 export interface ChallengeDetail extends ChallengeSummary {
@@ -95,8 +85,6 @@ export interface ChallengeDetail extends ChallengeSummary {
   hints: { id: number; cost: number; unlocked: boolean; content: string | null }[];
   solvers: { name: string; created_at: number }[];
   requires?: string[];
-  reviews: { count: number; average: number | null; list: Review[]; mine: { rating: number; comment: string | null } | null } | null;
-  writeups: { list: Writeup[]; mine: { url: string } | null } | null;
   attempts: { provided: string; correct: number; created_at: number; by_user: string | null }[];
 }
 
