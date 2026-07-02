@@ -16,6 +16,8 @@ interface Appeal {
   created_at: number;
   risk_score: number | null;
   case_reason: string | null;
+  challenge_id: number | null;
+  challenge_name: string | null;
 }
 
 export default function AdminAppeals() {
@@ -58,11 +60,16 @@ export default function AdminAppeals() {
               <div>
                 <div className="text-sm text-slate-500 mono">{new Date(a.created_at * 1000).toLocaleString()}</div>
                 <h2 className="mt-1 text-base text-white">{a.team_name || a.user_name || a.email || "Unknown account"}</h2>
-                <p className="text-xs text-slate-500">{a.target_type}{a.review_case_id ? ` · case #${a.review_case_id}` : ""}{a.risk_score != null ? ` · risk ${a.risk_score}` : ""}</p>
+                <p className="text-xs text-slate-500">
+                  {a.target_type}
+                  {a.review_case_id ? ` · case #${a.review_case_id}` : ""}
+                  {a.challenge_name ? ` · ${a.challenge_name}` : a.challenge_id ? ` · challenge #${a.challenge_id}` : ""}
+                  {a.risk_score != null ? ` · risk ${a.risk_score}` : ""}
+                </p>
               </div>
               <span className="badge border-slate-700 text-slate-300">{a.status}</span>
             </div>
-            {a.case_reason && <p className="mb-2 text-sm text-amber-300">Case: {a.case_reason}</p>}
+            {a.case_reason && <p className="mb-2 text-sm text-amber-300">Case{a.challenge_name ? ` (${a.challenge_name})` : ""}: {a.case_reason}</p>}
             <p className="whitespace-pre-wrap text-sm text-slate-300">{a.reason}</p>
             {a.admin_notes && <pre className="mt-3 max-h-32 overflow-auto whitespace-pre-wrap rounded bg-slate-950 p-3 text-xs text-slate-400">{a.admin_notes}</pre>}
             <div className="mt-4 grid gap-2 sm:grid-cols-[minmax(0,1fr)_auto]">

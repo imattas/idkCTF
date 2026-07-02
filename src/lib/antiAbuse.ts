@@ -55,6 +55,15 @@ export interface RiskResult {
   evidence: Record<string, unknown>;
 }
 
+export interface ReviewCaseLogContext {
+  id: number;
+  user_id: number | null;
+  team_id: number | null;
+  challenge_id: number | null;
+  challenge_name: string | null;
+  submission_id: number | null;
+}
+
 const DEFAULT_SECRET = "idkctf-local-dev-secret-change-me";
 
 function textEncoder() {
@@ -177,6 +186,28 @@ export async function logAbuseEvent(c: AppContext, type: string, opts: AbuseEven
   } catch (e) {
     console.error("anti-abuse event insert failed", e);
   }
+}
+
+export async function getReviewCaseLogContext(env: Env, caseId: number | null | undefined): Promise<ReviewCaseLogContext | null> {
+  if (!caseId) return null;
+  try {
+    return await env.DB.prepare(
+      `SELECT rc.id, rc.user_id, rc.team_id, rc.challenge_id, ch.name AS challenge_name, rc.submission_id
+       FROM review_cases rc
+       LEFT JOIN challenges ch ON ch.id = rc.challenge_id
+       WHERE rc.id = ?`
+    ).bind(caseId).first<ReviewCaseLogContext>();
+  } catch {
+    return null;
+  }
+}
+
+function withReviewCaseMetadata(ctx: ReviewCaseLogContext | null, metadata?: Record<string, unknown>): Record<string, unknown> | undefined {
+  const out: Record<string, unknown> = { ...(metadata || {}) };
+  if (ctx?.challenge_name) out.challenge_name = ctx.challenge_name;
+  if (ctx?.challenge_id != null) out.challenge_id = ctx.challenge_id;
+  if (ctx?.submission_id != null) out.submission_id = ctx.submission_id;
+  return Object.keys(out).length ? out : undefined;
 }
 
 export async function fixedWindowLimit(env: Env, key: string, max: number, windowSec: number): Promise<LimitResult> {
@@ -345,11 +376,27 @@ export async function createOrUpdateReviewCase(env: Env, cfg: SiteConfig, input:
   if (existing) {
     await env.DB.prepare(
       `UPDATE review_cases
-       SET risk_score = ?, status = ?, reason = ?, evidence = ?, proof_state = CASE WHEN proof_state = 'not_required' THEN ? ELSE proof_state END,
+       SET user_id = COALESCE(user_id, ?), team_id = COALESCE(team_id, ?), challenge_id = COALESCE(challenge_id, ?),
+           submission_id = COALESCE(submission_id, ?),
+           risk_score = ?, status = ?, reason = ?, evidence = ?, proof_state = CASE WHEN proof_state = 'not_required' THEN ? ELSE proof_state END,
            proof_requested_at = CASE WHEN proof_requested_at IS NULL AND ? = 'requested' THEN ? ELSE proof_requested_at END,
            updated_at = ?
        WHERE id = ?`
-    ).bind(input.risk_score, status, input.reason, JSON.stringify(input.evidence), proofState, proofState, now, now, existing.id).run();
+    ).bind(
+      input.user_id,
+      input.team_id,
+      input.challenge_id,
+      input.submission_id ?? null,
+      input.risk_score,
+      status,
+      input.reason,
+      JSON.stringify(input.evidence),
+      proofState,
+      proofState,
+      now,
+      now,
+      existing.id
+    ).run();
     return existing.id;
   }
 
@@ -382,5 +429,14 @@ export async function createOrUpdateReviewCase(env: Env, cfg: SiteConfig, input:
 }
 
 export async function logAdminReviewAction(c: AppContext, caseId: number, message: string, metadata?: Record<string, unknown>) {
-  await logAbuseEvent(c, ABUSE_EVENTS.ADMIN_ACTION, { review_case_id: caseId, message, metadata });
+  const ctx = await getReviewCaseLogContext(c.env, caseId);
+  await logAbuseEvent(c, ABUSE_EVENTS.ADMIN_ACTION, {
+    user_id: ctx?.user_id ?? null,
+    team_id: ctx?.team_id ?? null,
+    challenge_id: ctx?.challenge_id ?? null,
+    submission_id: ctx?.submission_id ?? null,
+    review_case_id: caseId,
+    message,
+    metadata: withReviewCaseMetadata(ctx, metadata),
+  });
 }

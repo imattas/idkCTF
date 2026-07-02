@@ -34,6 +34,10 @@ interface ReviewCase {
 interface EventRow {
   id: number;
   type: string;
+  challenge_id: number | null;
+  challenge_name: string | null;
+  user_name: string | null;
+  team_name: string | null;
   message: string | null;
   metadata: string | null;
   ip_hash: string | null;
@@ -48,6 +52,16 @@ function epoch(local: string): string {
 function prettyJson(raw: string | null): string {
   if (!raw) return "{}";
   try { return JSON.stringify(JSON.parse(raw), null, 2); } catch { return raw; }
+}
+
+function metadataValue(raw: string | null, key: string): string | null {
+  if (!raw) return null;
+  try {
+    const value = JSON.parse(raw)?.[key];
+    return value == null ? null : String(value);
+  } catch {
+    return null;
+  }
 }
 
 export default function AdminReviewCases() {
@@ -150,15 +164,16 @@ function CaseModal({ id, onClose, onChanged }: { id: number; onClose: () => void
   };
 
   return (
-    <Modal open onClose={onClose} wide title={row ? `Review case #${row.id}` : "Review case"}>
+    <Modal open onClose={onClose} wide title={row ? `Review case #${row.id}${row.challenge_name ? ` · ${row.challenge_name}` : ""}` : "Review case"}>
       {!row ? <p className="text-slate-500">Loading...</p> : (
         <div className="space-y-5">
           {msg && <div className="rounded-md border border-slate-700 bg-slate-900 p-2 text-sm text-slate-300">{msg}</div>}
-          <div className="grid gap-3 md:grid-cols-4">
+          <div className="grid gap-3 md:grid-cols-5">
             <div><div className="label">Risk</div><div className="mono text-xl text-amber-300">{row.risk_score}</div></div>
             <div><div className="label">Status</div><span className="badge border-slate-700 text-slate-300">{row.status}</span></div>
             <div><div className="label">Proof</div><span className="badge border-slate-700 text-slate-300">{row.proof_state}</span></div>
             <div><div className="label">Account</div><div className="text-slate-300">{row.team_name || row.user_name || "—"}</div></div>
+            <div><div className="label">Challenge</div><div className="text-slate-300">{row.challenge_name || (row.challenge_id ? `#${row.challenge_id}` : "—")}</div></div>
           </div>
 
           <section className="rounded-md border border-slate-800 p-3">
@@ -182,6 +197,8 @@ function CaseModal({ id, onClose, onChanged }: { id: number; onClose: () => void
                 <div key={e.id} className="border-b border-slate-900 py-2 text-xs">
                   <span className="mono text-slate-500">{new Date(e.created_at * 1000).toLocaleString()}</span>
                   <span className="ml-2 badge border-slate-700 text-slate-300">{e.type}</span>
+                  <span className="ml-2 text-slate-400">{e.challenge_name || metadataValue(e.metadata, "challenge_name") || (e.challenge_id ? `challenge #${e.challenge_id}` : "case-wide")}</span>
+                  <span className="ml-2 text-slate-500">{e.team_name || e.user_name || "—"}</span>
                   <span className="ml-2 text-slate-300">{e.message || ""}</span>
                   <span className="ml-2 text-slate-600">ip {e.ip_hash?.slice(0, 10) || "—"} ua {e.user_agent_hash?.slice(0, 10) || "—"}</span>
                 </div>

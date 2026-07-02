@@ -10,6 +10,7 @@ import { logEvent, EVENTS } from "../lib/events";
 import { listBans, addBan, removeBan } from "../lib/bans";
 import {
   ABUSE_EVENTS,
+  getReviewCaseLogContext,
   checklistComplete,
   logAbuseEvent,
   logAdminReviewAction,
@@ -974,11 +975,16 @@ app.get("/review-cases/:id", async (c) => {
   ).bind(id).first<any>();
   if (!row) return c.json({ error: "Not found" }, 404);
   const events = await c.env.DB.prepare(
-    `SELECT ae.*, u.name AS user_name, t.name AS team_name, ch.name AS challenge_name
+    `SELECT ae.id, ae.type,
+            COALESCE(ae.challenge_id, linked.challenge_id) AS challenge_id,
+            COALESCE(ae.submission_id, linked.submission_id) AS submission_id,
+            ae.review_case_id, ae.ip_hash, ae.user_agent_hash, ae.message, ae.metadata, ae.created_at,
+            u.name AS user_name, t.name AS team_name, ch.name AS challenge_name
      FROM anti_abuse_events ae
-     LEFT JOIN users u ON u.id = ae.user_id
-     LEFT JOIN teams t ON t.id = ae.team_id
-     LEFT JOIN challenges ch ON ch.id = ae.challenge_id
+     LEFT JOIN review_cases linked ON linked.id = ae.review_case_id
+     LEFT JOIN users u ON u.id = COALESCE(ae.user_id, linked.user_id)
+     LEFT JOIN teams t ON t.id = COALESCE(ae.team_id, linked.team_id)
+     LEFT JOIN challenges ch ON ch.id = COALESCE(ae.challenge_id, linked.challenge_id)
      WHERE ae.review_case_id = ?
         OR ae.submission_id = ?
         OR (ae.challenge_id = ? AND (ae.user_id = ? OR (ae.team_id IS NOT NULL AND ae.team_id = ?)))
@@ -1066,11 +1072,13 @@ app.get("/appeals", async (c) => {
   const status = c.req.query("status");
   const where = status && status !== "all" ? "WHERE a.status = ?" : "";
   const stmt = c.env.DB.prepare(
-    `SELECT a.*, u.name AS user_name, t.name AS team_name, rc.risk_score, rc.reason AS case_reason
+    `SELECT a.*, u.name AS user_name, t.name AS team_name, rc.risk_score, rc.reason AS case_reason,
+            rc.challenge_id, ch.name AS challenge_name
      FROM appeals a
      LEFT JOIN users u ON u.id = a.user_id
      LEFT JOIN teams t ON t.id = a.team_id
      LEFT JOIN review_cases rc ON rc.id = a.review_case_id
+     LEFT JOIN challenges ch ON ch.id = rc.challenge_id
      ${where}
      ORDER BY a.id DESC
      LIMIT 300`
@@ -1095,8 +1103,17 @@ app.post("/appeals/:id/action", async (c) => {
          resolved_at = CASE WHEN ? != 'note' THEN ? ELSE resolved_at END
      WHERE id = ?`
   ).bind(status, notes, b.resolution || null, action, c.var.user!.id, action, nowSeconds(), id).run();
-  await logAbuseEvent(c, ABUSE_EVENTS.ADMIN_ACTION, { user_id: row.user_id, team_id: row.team_id, review_case_id: row.review_case_id, message: `Appeal #${id}: ${action}` });
-  await logEvent(c, EVENTS.ADMIN_ACTION, { message: `Appeal #${id}: ${action}` });
+  const reviewContext = await getReviewCaseLogContext(c.env, row.review_case_id);
+  await logAbuseEvent(c, ABUSE_EVENTS.ADMIN_ACTION, {
+    user_id: row.user_id ?? reviewContext?.user_id ?? null,
+    team_id: row.team_id ?? reviewContext?.team_id ?? null,
+    challenge_id: reviewContext?.challenge_id ?? null,
+    submission_id: reviewContext?.submission_id ?? null,
+    review_case_id: row.review_case_id,
+    message: `Appeal #${id}: ${action}`,
+    metadata: { challenge_name: reviewContext?.challenge_name ?? null },
+  });
+  await logEvent(c, EVENTS.ADMIN_ACTION, { challenge_id: reviewContext?.challenge_id ?? null, message: `Appeal #${id}: ${action}` });
   return c.json({ ok: true });
 });
 

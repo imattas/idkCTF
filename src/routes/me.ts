@@ -4,7 +4,7 @@ import { requireAuth } from "../middleware/auth";
 import { getConfig } from "../lib/config";
 import { computeStandings } from "../lib/standings";
 import { nowSeconds } from "../lib/validate";
-import { logAbuseEvent, ABUSE_EVENTS } from "../lib/antiAbuse";
+import { logAbuseEvent, ABUSE_EVENTS, getReviewCaseLogContext } from "../lib/antiAbuse";
 
 const app = new Hono<{ Bindings: Env; Variables: Variables }>();
 app.use("*", requireAuth);
@@ -79,8 +79,11 @@ app.post("/review-cases/:id/proof", async (c) => {
   const a = await account(c);
   const u = c.var.user!;
   const rc = await c.env.DB.prepare(
-    "SELECT id, user_id, team_id, proof_state FROM review_cases WHERE id = ? AND (user_id = ? OR (? IS NOT NULL AND team_id = ?))"
-  ).bind(id, u.id, a.id, a.id).first<{ id: number; user_id: number | null; team_id: number | null; proof_state: string }>();
+    `SELECT rc.id, rc.user_id, rc.team_id, rc.challenge_id, rc.submission_id, rc.proof_state, ch.name AS challenge_name
+     FROM review_cases rc
+     LEFT JOIN challenges ch ON ch.id = rc.challenge_id
+     WHERE rc.id = ? AND (rc.user_id = ? OR (? IS NOT NULL AND rc.team_id = ?))`
+  ).bind(id, u.id, a.id, a.id).first<{ id: number; user_id: number | null; team_id: number | null; challenge_id: number | null; submission_id: number | null; proof_state: string; challenge_name: string | null }>();
   if (!rc) return c.json({ error: "Not found" }, 404);
 
   const contentType = c.req.header("Content-Type") || "";
@@ -117,9 +120,11 @@ app.post("/review-cases/:id/proof", async (c) => {
   await logAbuseEvent(c, ABUSE_EVENTS.ADMIN_ACTION, {
     user_id: u.id,
     team_id: rc.team_id,
+    challenge_id: rc.challenge_id,
+    submission_id: rc.submission_id,
     review_case_id: id,
     message: "Proof submitted",
-    metadata: { has_attachment: !!fileData },
+    metadata: { has_attachment: !!fileData, challenge_name: rc.challenge_name },
   });
   return c.json({ ok: true });
 });
@@ -128,10 +133,13 @@ app.get("/appeals", async (c) => {
   const a = await account(c);
   const u = c.var.user!;
   const rows = await c.env.DB.prepare(
-    `SELECT id, review_case_id, target_type, target_id, reason, status, resolution, created_at
-     FROM appeals
-     WHERE user_id = ? OR (? IS NOT NULL AND team_id = ?)
-     ORDER BY id DESC
+    `SELECT a.id, a.review_case_id, a.target_type, a.target_id, a.reason, a.status, a.resolution, a.created_at,
+            rc.challenge_id, ch.name AS challenge_name
+     FROM appeals a
+     LEFT JOIN review_cases rc ON rc.id = a.review_case_id
+     LEFT JOIN challenges ch ON ch.id = rc.challenge_id
+     WHERE a.user_id = ? OR (? IS NOT NULL AND a.team_id = ?)
+     ORDER BY a.id DESC
      LIMIT 50`
   ).bind(u.id, a.id, a.id).all();
   return c.json({ appeals: rows.results });
@@ -143,13 +151,22 @@ app.post("/appeals", async (c) => {
   const body = await c.req.json().catch(() => ({}));
   const reason = String(body.reason || "").trim();
   if (!reason) return c.json({ error: "Appeal reason is required." }, 400);
+  const reviewCaseId = body.review_case_id ? Number(body.review_case_id) : null;
+  let reviewContext = null;
+  if (reviewCaseId) {
+    const owned = await c.env.DB.prepare(
+      "SELECT id FROM review_cases WHERE id = ? AND (user_id = ? OR (? IS NOT NULL AND team_id = ?))"
+    ).bind(reviewCaseId, u.id, a.id, a.id).first<{ id: number }>();
+    if (!owned) return c.json({ error: "Review case not found" }, 404);
+    reviewContext = await getReviewCaseLogContext(c.env, reviewCaseId);
+  }
   const now = nowSeconds();
   const res = await c.env.DB.prepare(
     "INSERT INTO appeals (user_id, team_id, review_case_id, target_type, target_id, email, reason, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
   ).bind(
     u.id,
     a.mode === "teams" ? a.id : null,
-    body.review_case_id || null,
+    reviewCaseId,
     String(body.target_type || "review_case"),
     body.target_id || null,
     u.email,
@@ -159,9 +176,11 @@ app.post("/appeals", async (c) => {
   await logAbuseEvent(c, ABUSE_EVENTS.APPEAL_CREATED, {
     user_id: u.id,
     team_id: a.mode === "teams" ? a.id : null,
-    review_case_id: body.review_case_id || null,
+    challenge_id: reviewContext?.challenge_id ?? null,
+    submission_id: reviewContext?.submission_id ?? null,
+    review_case_id: reviewCaseId,
     message: "Appeal created",
-    metadata: { appeal_id: res.meta.last_row_id },
+    metadata: { appeal_id: res.meta.last_row_id, challenge_name: reviewContext?.challenge_name ?? null },
   });
   return c.json({ ok: true });
 });

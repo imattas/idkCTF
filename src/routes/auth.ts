@@ -9,7 +9,7 @@ import { logEvent, EVENTS, extractMeta } from "../lib/events";
 import { sendEmail, welcomeEmail } from "../lib/email";
 import { isIpBanned, isUsernameBanned } from "../lib/bans";
 import { rateLimit } from "../lib/ratelimit";
-import { logAbuseEvent, ABUSE_EVENTS } from "../lib/antiAbuse";
+import { logAbuseEvent, ABUSE_EVENTS, getReviewCaseLogContext } from "../lib/antiAbuse";
 
 const app = new Hono<{ Bindings: Env; Variables: Variables }>();
 
@@ -142,10 +142,28 @@ app.post("/appeal", async (c) => {
   if (!email || !reason) return c.json({ error: "Email and appeal reason are required" }, 400);
   if (!EMAIL_RE.test(email)) return c.json({ error: "Invalid email" }, 400);
   const user = await c.env.DB.prepare("SELECT id, team_id FROM users WHERE lower(email) = ?").bind(email).first<{ id: number; team_id: number | null }>();
+  const reviewCaseId = body.review_case_id ? Number(body.review_case_id) : null;
+  let reviewContext = null;
+  if (reviewCaseId) {
+    if (!user) return c.json({ error: "Review case not found" }, 404);
+    const owned = await c.env.DB.prepare(
+      "SELECT id FROM review_cases WHERE id = ? AND (user_id = ? OR (? IS NOT NULL AND team_id = ?))"
+    ).bind(reviewCaseId, user.id, user.team_id, user.team_id).first<{ id: number }>();
+    if (!owned) return c.json({ error: "Review case not found" }, 404);
+    reviewContext = await getReviewCaseLogContext(c.env, reviewCaseId);
+  }
   const res = await c.env.DB.prepare(
     "INSERT INTO appeals (user_id, team_id, review_case_id, target_type, target_id, email, reason, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
-  ).bind(user?.id ?? null, user?.team_id ?? null, body.review_case_id || null, targetType, body.target_id || null, email, reason, nowSeconds()).run();
-  await logAbuseEvent(c, ABUSE_EVENTS.APPEAL_CREATED, { user_id: user?.id ?? null, team_id: user?.team_id ?? null, message: targetType, metadata: { appeal_id: res.meta.last_row_id } });
+  ).bind(user?.id ?? null, user?.team_id ?? null, reviewCaseId, targetType, body.target_id || null, email, reason, nowSeconds()).run();
+  await logAbuseEvent(c, ABUSE_EVENTS.APPEAL_CREATED, {
+    user_id: user?.id ?? null,
+    team_id: user?.team_id ?? null,
+    challenge_id: reviewContext?.challenge_id ?? null,
+    submission_id: reviewContext?.submission_id ?? null,
+    review_case_id: reviewCaseId,
+    message: targetType,
+    metadata: { appeal_id: res.meta.last_row_id, challenge_name: reviewContext?.challenge_name ?? null },
+  });
   return c.json({ ok: true });
 });
 

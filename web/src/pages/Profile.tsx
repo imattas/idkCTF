@@ -208,7 +208,7 @@ function MyReviewCases() {
           <div className="mt-3 space-y-1 text-xs text-slate-500">
             {appeals.data.appeals.map((a: any) => (
               <div key={a.id} className="flex justify-between border-t border-[var(--border-soft)] pt-1">
-                <span>{a.target_type} · {a.status}</span>
+                <span>{a.target_type} · {a.status}{a.challenge_name ? ` · ${a.challenge_name}` : ""}</span>
                 <span className="mono">{new Date(a.created_at * 1000).toLocaleDateString()}</span>
               </div>
             ))}
