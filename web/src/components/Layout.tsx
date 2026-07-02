@@ -129,11 +129,11 @@ export default function Layout() {
         )}
       </header>
 
-      <main id="main" className="container-app py-8 md:py-10">
+      <main id="main" className="container-app flex-1 py-8 md:py-10">
         <Outlet />
       </main>
 
-      <footer className="mt-8 border-t border-[var(--border)] py-7">
+      <footer className="border-t border-[var(--border)] py-7">
         <div className="container-app flex flex-wrap items-center justify-center gap-x-5 gap-y-2 text-xs text-[var(--fg-disabled)] mono">
           <span>{config.ctf_name}</span>
           {navPages?.footer.map((p) => (

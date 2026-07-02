@@ -2,7 +2,7 @@ import { useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import {
-  LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend,
+  Bar, BarChart, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend,
 } from "recharts";
 import { api, ApiError } from "../api";
 import type { StandingRow, Bracket } from "../types";
@@ -35,6 +35,12 @@ export default function Scoreboard() {
   const relevantBrackets = (brk.data?.brackets ?? []).filter((b) => b.type === mode);
   const standings = sb.data?.standings ?? [];
   const filteredStandings = standings.filter((s) => s.name.toLowerCase().includes(search.trim().toLowerCase()));
+  const topChartRows = standings.slice(0, 10).map((s) => ({
+    rank: `#${s.rank}`,
+    name: s.name,
+    score: s.score,
+    solves: s.solves,
+  }));
 
   const chartData = useMemo(() => {
     const series = gr.data?.series ?? [];
@@ -95,7 +101,8 @@ export default function Scoreboard() {
 
       {chartData.length > 1 && (gr.data?.series?.length ?? 0) > 0 && (
         <section className="card h-80">
-          <ResponsiveContainer width="100%" height="100%">
+          <div className="label">Score over time</div>
+          <ResponsiveContainer width="100%" height="88%">
             <LineChart data={chartData} margin={{ top: 10, right: 20, bottom: 0, left: -10 }}>
               <CartesianGrid strokeDasharray="3 3" stroke="#21212a" />
               <XAxis
@@ -122,6 +129,44 @@ export default function Scoreboard() {
               ))}
             </LineChart>
           </ResponsiveContainer>
+        </section>
+      )}
+
+      {topChartRows.length > 0 && (
+        <section className="grid gap-4 lg:grid-cols-2">
+          <div className="card h-80">
+            <div className="label">Top scores</div>
+            <ResponsiveContainer width="100%" height="88%">
+              <BarChart data={topChartRows} margin={{ top: 8, right: 18, bottom: 0, left: -12 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#21212a" />
+                <XAxis dataKey="rank" stroke="#7f7f8a" fontSize={11} />
+                <YAxis stroke="#7f7f8a" fontSize={11} />
+                <Tooltip
+                  contentStyle={{ background: "#111116", border: "1px solid #32323d", borderRadius: 8, color: "#ededf1" }}
+                  formatter={(value, name) => [value, name === "score" ? "score" : name]}
+                  labelFormatter={(_, payload) => payload?.[0]?.payload?.name || ""}
+                />
+                <Bar dataKey="score" fill="var(--accent)" radius={[4, 4, 0, 0]} />
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+
+          <div className="card h-80">
+            <div className="label">Solves by rank</div>
+            <ResponsiveContainer width="100%" height="88%">
+              <BarChart data={topChartRows} margin={{ top: 8, right: 18, bottom: 0, left: -12 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#21212a" />
+                <XAxis dataKey="rank" stroke="#7f7f8a" fontSize={11} />
+                <YAxis allowDecimals={false} stroke="#7f7f8a" fontSize={11} />
+                <Tooltip
+                  contentStyle={{ background: "#111116", border: "1px solid #32323d", borderRadius: 8, color: "#ededf1" }}
+                  formatter={(value, name) => [value, name === "solves" ? "solves" : name]}
+                  labelFormatter={(_, payload) => payload?.[0]?.payload?.name || ""}
+                />
+                <Bar dataKey="solves" fill="#d8ab44" radius={[4, 4, 0, 0]} />
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
         </section>
       )}
 

@@ -1,10 +1,8 @@
 import { useParams, Link } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
 import { api, ApiError } from "../api";
+import { StatsChartGrid } from "../components/StatsCharts";
 import type { ProfileStats } from "../types";
-
-const CAT_COLOR = "#cf2336";
 
 export default function PublicProfile({ kind }: { kind: "user" | "team" }) {
   const { id } = useParams();
@@ -21,8 +19,6 @@ export default function PublicProfile({ kind }: { kind: "user" | "team" }) {
 
   const entity = kind === "user" ? data.user : data.team;
   const stats: ProfileStats = data.stats;
-  const cats = Object.entries(stats.categories);
-  const maxCat = Math.max(1, ...cats.map(([, v]) => v.points));
 
   return (
     <div className="page-stack">
@@ -41,11 +37,7 @@ export default function PublicProfile({ kind }: { kind: "user" | "team" }) {
         </div>
       </section>
 
-      <div className="grid grid-cols-3 gap-4">
-        <Stat label="Score" value={stats.score} />
-        <Stat label="Rank" value={stats.rank ? `#${stats.rank}` : "—"} />
-        <Stat label="Solves" value={stats.solve_count} />
-      </div>
+      <StatsChartGrid stats={stats} />
 
       {kind === "team" && data.members?.length > 0 && (
         <div className="card">
@@ -59,36 +51,6 @@ export default function PublicProfile({ kind }: { kind: "user" | "team" }) {
           </div>
         </div>
       )}
-
-      {stats.timeline.length > 1 && (
-        <div className="card h-64">
-          <div className="label">Score over time</div>
-          <ResponsiveContainer width="100%" height="90%">
-            <LineChart data={stats.timeline} margin={{ top: 5, right: 20, bottom: 0, left: -10 }}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" />
-              <XAxis dataKey="time" tickFormatter={(t) => new Date(t * 1000).toLocaleDateString()} stroke="#64748b" fontSize={11} />
-              <YAxis stroke="#64748b" fontSize={11} />
-              <Tooltip contentStyle={{ background: "#0f172a", border: "1px solid #1e293b", borderRadius: 8 }} labelFormatter={(t) => new Date(Number(t) * 1000).toLocaleString()} />
-              <Line type="stepAfter" dataKey="score" stroke={CAT_COLOR} dot={false} strokeWidth={2} />
-            </LineChart>
-          </ResponsiveContainer>
-        </div>
-      )}
-
-      {cats.length > 0 && (
-        <div className="card">
-          <div className="label">Category breakdown</div>
-          <div className="space-y-2">
-            {cats.map(([cat, v]) => (
-              <div key={cat}>
-                <div className="mb-1 flex justify-between text-sm"><span className="text-slate-300">{cat}</span><span className="text-slate-500">{v.count} solves / {v.points} pts</span></div>
-                <div className="h-2 rounded-full bg-slate-800"><div className="h-2 rounded-full" style={{ width: `${(v.points / maxCat) * 100}%`, background: "var(--accent)" }} /></div>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
       <div className="card overflow-x-auto p-0">
         <table className="w-full text-sm">
           <thead>
@@ -112,15 +74,6 @@ export default function PublicProfile({ kind }: { kind: "user" | "team" }) {
           </tbody>
         </table>
       </div>
-    </div>
-  );
-}
-
-function Stat({ label, value }: { label: string; value: any }) {
-  return (
-    <div className="card">
-      <div className="text-sm text-slate-400">{label}</div>
-      <div className="stat-value">{value}</div>
     </div>
   );
 }

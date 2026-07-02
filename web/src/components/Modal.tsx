@@ -1,4 +1,5 @@
 import { useEffect, type ReactNode } from "react";
+import { createPortal } from "react-dom";
 
 export default function Modal({
   open,
@@ -24,15 +25,23 @@ export default function Modal({
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.key === "Escape") onClose();
     };
+    const previousBodyOverflow = document.body.style.overflow;
+    const previousHtmlOverflow = document.documentElement.style.overflow;
+    document.body.style.overflow = "hidden";
+    document.documentElement.style.overflow = "hidden";
     window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
+    return () => {
+      window.removeEventListener("keydown", onKeyDown);
+      document.body.style.overflow = previousBodyOverflow;
+      document.documentElement.style.overflow = previousHtmlOverflow;
+    };
   }, [onClose, open]);
 
   if (!open) return null;
   const width = xl ? "max-w-5xl" : wide ? "max-w-3xl" : "max-w-lg";
 
   if (fullscreen) {
-    return (
+    return createPortal(
       <div className="fixed inset-0 z-50 flex h-[100dvh] flex-col overflow-hidden bg-[var(--bg)]" role="presentation">
         <div
           className="flex min-h-0 flex-1 flex-col overflow-hidden"
@@ -51,11 +60,12 @@ export default function Modal({
           </div>
           {footer && <div className="shrink-0 border-t border-[var(--border)] bg-[var(--surface)] px-4 py-3 sm:px-6">{footer}</div>}
         </div>
-      </div>
+      </div>,
+      document.body
     );
   }
 
-  return (
+  return createPortal(
     <div
       className="fixed inset-0 z-50 flex items-center justify-center overflow-hidden bg-black/70 p-3 sm:p-6"
       onClick={onClose}
@@ -77,6 +87,7 @@ export default function Modal({
         <div className="min-h-0 flex-1 overflow-y-auto p-5">{children}</div>
         {footer && <div className="shrink-0 border-t border-[var(--border)] bg-[var(--surface)] px-5 py-3">{footer}</div>}
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }

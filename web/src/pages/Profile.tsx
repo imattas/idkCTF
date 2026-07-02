@@ -3,6 +3,8 @@ import { useQuery } from "@tanstack/react-query";
 import { api, ApiError } from "../api";
 import { useStore } from "../store";
 import { COUNTRIES } from "../countries";
+import { StatsChartGrid } from "../components/StatsCharts";
+import type { ProfileStats } from "../types";
 
 interface Submission {
   id: number;
@@ -36,6 +38,11 @@ export default function Profile() {
   });
   const [msg, setMsg] = useState("");
   const [err, setErr] = useState("");
+  const stats = useQuery({
+    queryKey: ["profile-stats", "user", user!.id],
+    enabled: user!.role === "user",
+    queryFn: () => api.get<{ stats: ProfileStats }>(`/profile/user/${user!.id}`),
+  });
 
   const set = (k: keyof typeof form) => (e: ChangeEvent<HTMLInputElement | HTMLSelectElement>) => setForm({ ...form, [k]: e.target.value });
 
@@ -73,6 +80,8 @@ export default function Profile() {
 
       {msg && <div className="rounded-md border border-emerald-700 bg-emerald-950/40 p-3 text-sm text-emerald-300">{msg}</div>}
       {err && <div className="rounded-md border border-rose-700 bg-rose-950/40 p-3 text-sm text-rose-300">{err}</div>}
+
+      {stats.data?.stats && <StatsChartGrid stats={stats.data.stats} />}
 
       <form onSubmit={save} className="card space-y-4">
         <h2 className="text-base">Profile details</h2>

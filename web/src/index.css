@@ -99,6 +99,11 @@ body {
   text-rendering: optimizeLegibility;
 }
 
+#root {
+  min-height: 100vh;
+  min-height: 100dvh;
+}
+
 button,
 input,
 select,
@@ -180,6 +185,9 @@ code {
 
 .app-shell {
   min-height: 100vh;
+  min-height: 100dvh;
+  display: flex;
+  flex-direction: column;
   background:
     linear-gradient(180deg, color-mix(in srgb, var(--surface) 38%, transparent), transparent 280px),
     var(--bg);
@@ -341,6 +349,7 @@ code {
 }
 
 main {
+  flex: 1 0 auto;
   animation: fadeUp 0.24s ease both;
 }
 

@@ -2,7 +2,8 @@ import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { api, ApiError } from "../api";
 import { useStore } from "../store";
-import type { Bracket } from "../types";
+import { StatsChartGrid } from "../components/StatsCharts";
+import type { Bracket, ProfileStats } from "../types";
 
 interface TeamInfo {
   team: { id: number; name: string; invite_code?: string; affiliation?: string; country?: string } | null;
@@ -15,6 +16,12 @@ export default function Team() {
   const { data, isLoading, refetch } = useQuery({
     queryKey: ["my-team"],
     queryFn: () => api.get<TeamInfo>("/teams/me"),
+  });
+  const teamId = data?.team?.id ?? null;
+  const stats = useQuery({
+    queryKey: ["profile-stats", "team", teamId],
+    enabled: !!teamId,
+    queryFn: () => api.get<{ stats: ProfileStats }>(`/profile/team/${teamId}`),
   });
   const [createName, setCreateName] = useState("");
   const [bracketId, setBracketId] = useState("");
@@ -136,6 +143,8 @@ export default function Team() {
       </section>
 
       {err && <div className="rounded-md border border-rose-700 bg-rose-950/40 p-3 text-sm text-rose-300">{err}</div>}
+
+      {stats.data?.stats && <StatsChartGrid stats={stats.data.stats} />}
 
       {data.is_captain && t.invite_code && (
         <section className="card">
