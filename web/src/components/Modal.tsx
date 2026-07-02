@@ -7,6 +7,7 @@ export default function Modal({
   children,
   wide,
   xl,
+  fullscreen,
   footer,
 }: {
   open: boolean;
@@ -15,6 +16,7 @@ export default function Modal({
   children: ReactNode;
   wide?: boolean;
   xl?: boolean;
+  fullscreen?: boolean;
   footer?: ReactNode;
 }) {
   useEffect(() => {
@@ -28,6 +30,30 @@ export default function Modal({
 
   if (!open) return null;
   const width = xl ? "max-w-5xl" : wide ? "max-w-3xl" : "max-w-lg";
+
+  if (fullscreen) {
+    return (
+      <div className="fixed inset-0 z-50 flex h-[100dvh] flex-col overflow-hidden bg-[var(--bg)]" role="presentation">
+        <div
+          className="flex min-h-0 flex-1 flex-col overflow-hidden"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby={title ? "modal-title" : undefined}
+        >
+          <div className="flex shrink-0 items-center justify-between gap-4 border-b border-[var(--border)] bg-[var(--surface)] px-4 py-3 sm:px-6">
+            <h3 id="modal-title" className="min-w-0 truncate text-base">{title}</h3>
+            <button onClick={onClose} className="btn-ghost h-8 min-h-0 px-2 text-xs" aria-label="Close editor">
+              Close
+            </button>
+          </div>
+          <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 py-5 sm:px-6">
+            <div className="mx-auto w-full max-w-6xl">{children}</div>
+          </div>
+          {footer && <div className="shrink-0 border-t border-[var(--border)] bg-[var(--surface)] px-4 py-3 sm:px-6">{footer}</div>}
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div

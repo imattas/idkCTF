@@ -485,7 +485,7 @@ function Editor({ id, onClose, onSaved }: { id: number | "new"; onClose: () => v
   );
 
   return (
-    <Modal open onClose={onClose} xl title={isNew && chId == null ? "New challenge" : `Edit: ${form.name || "challenge"}`} footer={footer}>
+    <Modal open onClose={onClose} fullscreen title={isNew && chId == null ? "New challenge" : `Edit: ${form.name || "challenge"}`} footer={footer}>
       {/* Status bar */}
       {chId != null && (
         <div className="mb-4 flex flex-wrap items-center gap-2 rounded-md border border-slate-800 bg-slate-950/50 px-3 py-2 text-xs">
@@ -497,7 +497,7 @@ function Editor({ id, onClose, onSaved }: { id: number | "new"; onClose: () => v
         </div>
       )}
 
-      <div className="mb-5 flex gap-1 border-b border-slate-800">
+      <div className="sticky top-0 z-10 mb-5 flex gap-1 overflow-x-auto border-b border-slate-800 bg-[var(--bg)] pt-1">
         {tabBtn("details", "Details")}
         {tabBtn("quality", "Quality")}
         {tabBtn("flags", "Flags", flagCount === 0 ? "!" : `(${flagCount})`)}
