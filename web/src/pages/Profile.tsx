@@ -1,29 +1,16 @@
 import { useState, type ChangeEvent, type FormEvent } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, ApiError } from "../api";
 import { useStore } from "../store";
 import { COUNTRIES } from "../countries";
 import { StatsChartGrid } from "../components/StatsCharts";
-import type { ProfileStats } from "../types";
+import type { ProfileStats, ReviewCaseSummary } from "../types";
 
 interface Submission {
   id: number;
   challenge: string;
   provided: string;
   correct: number;
-  created_at: number;
-}
-
-interface ReviewCase {
-  id: number;
-  challenge_name: string | null;
-  risk_score: number;
-  status: string;
-  reason: string;
-  proof_state: string;
-  proof_requested_at: number | null;
-  proof_submitted_at: number | null;
-  resolution: string | null;
   created_at: number;
 }
 
@@ -120,13 +107,14 @@ export default function Profile() {
 }
 
 function MyReviewCases() {
+  const queryClient = useQueryClient();
   const [proof, setProof] = useState<Record<number, string>>({});
   const [files, setFiles] = useState<Record<number, File | null>>({});
   const [appeal, setAppeal] = useState({ review_case_id: "", reason: "" });
   const [msg, setMsg] = useState("");
   const cases = useQuery({
     queryKey: ["my-review-cases"],
-    queryFn: () => api.get<{ cases: ReviewCase[] }>("/me/review-cases"),
+    queryFn: () => api.get<{ cases: ReviewCaseSummary[] }>("/me/review-cases"),
   });
   const appeals = useQuery({
     queryKey: ["my-appeals"],
@@ -142,7 +130,10 @@ function MyReviewCases() {
       setProof({ ...proof, [id]: "" });
       setFiles({ ...files, [id]: null });
       setMsg("Proof submitted for admin review.");
-      cases.refetch();
+      await Promise.all([
+        cases.refetch(),
+        queryClient.invalidateQueries({ queryKey: ["my-review-case-alerts"] }),
+      ]);
     } catch (e) {
       setMsg(e instanceof ApiError ? e.message : "Proof submission failed");
     }
@@ -165,7 +156,7 @@ function MyReviewCases() {
 
   const visibleCases = cases.data?.cases ?? [];
   return (
-    <section className="card space-y-5">
+    <section id="review-proof" className="card scroll-mt-24 space-y-5">
       <div>
         <h2 className="text-base">Review and proof</h2>
         <p className="mt-1 text-sm text-slate-500">Proof requests and appeals are reviewed by admins. Automated signals do not permanently ban accounts.</p>

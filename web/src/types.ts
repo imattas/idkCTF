@@ -63,6 +63,26 @@ export interface CurrentUser {
   under_review?: number;
 }
 
+export interface ReviewCaseSummary {
+  id: number;
+  challenge_id: number | null;
+  challenge_name: string | null;
+  risk_score: number;
+  status: string;
+  reason: string;
+  proof_state: string;
+  proof_requested_at: number | null;
+  proof_submitted_at: number | null;
+  resolution: string | null;
+  resolved_at: number | null;
+  leaderboard_frozen: number;
+  prize_disqualified: number;
+  suspended: number;
+  banned: number;
+  created_at: number;
+  updated_at: number;
+}
+
 export interface Bootstrap {
   config: PublicConfig;
   competition_state: "before" | "running" | "ended";

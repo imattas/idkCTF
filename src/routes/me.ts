@@ -63,7 +63,8 @@ app.get("/review-cases", async (c) => {
   const u = c.var.user!;
   const rows = await c.env.DB.prepare(
     `SELECT rc.id, rc.challenge_id, ch.name AS challenge_name, rc.risk_score, rc.status, rc.reason,
-            rc.proof_state, rc.proof_requested_at, rc.proof_submitted_at, rc.resolution, rc.created_at, rc.updated_at
+            rc.proof_state, rc.proof_requested_at, rc.proof_submitted_at, rc.resolution, rc.resolved_at,
+            rc.leaderboard_frozen, rc.prize_disqualified, rc.suspended, rc.banned, rc.created_at, rc.updated_at
      FROM review_cases rc
      LEFT JOIN challenges ch ON ch.id = rc.challenge_id
      WHERE rc.user_id = ? OR (? IS NOT NULL AND rc.team_id = ?)

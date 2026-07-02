@@ -5,6 +5,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useStore } from "../store";
 import { api } from "../api";
 import type { NavPage } from "../types";
+import UserReviewAlerts from "./UserReviewAlerts";
 
 export default function Layout() {
   const { config, user, competition_state, refresh } = useStore();
@@ -132,6 +133,8 @@ export default function Layout() {
       <main id="main" className="container-app flex-1 py-8 md:py-10">
         <Outlet />
       </main>
+
+      <UserReviewAlerts />
 
       <footer className="border-t border-[var(--border)] py-7">
         <div className="container-app flex flex-wrap items-center justify-center gap-x-5 gap-y-2 text-xs text-[var(--fg-disabled)] mono">
