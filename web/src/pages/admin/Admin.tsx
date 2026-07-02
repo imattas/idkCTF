@@ -1,6 +1,6 @@
 import { Routes, Route, NavLink, Navigate } from "react-router-dom";
 import Dashboard from "./Dashboard";
-import AdminChallenges from "./AdminChallenges";
+import AdminChallenges, { AdminChallengeCreate, AdminChallengeEdit } from "./AdminChallenges";
 import AdminPeople from "./AdminPeople";
 import AdminActivity from "./AdminActivity";
 import AdminSite from "./AdminSite";
@@ -41,6 +41,8 @@ export default function Admin() {
         <Routes>
           <Route index element={<Dashboard />} />
           <Route path="challenges" element={<AdminChallenges />} />
+          <Route path="challenges/new" element={<AdminChallengeCreate />} />
+          <Route path="challenges/:id/edit" element={<AdminChallengeEdit />} />
           <Route path="people" element={<Navigate to="/admin/people/users" replace />} />
           <Route path="people/:tab" element={<AdminPeople />} />
           <Route path="activity" element={<Navigate to="/admin/activity/cases" replace />} />

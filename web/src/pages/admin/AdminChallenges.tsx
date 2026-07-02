@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { Link, useLocation, useNavigate, useParams } from "react-router-dom";
 import { api, ApiError } from "../../api";
-import Modal from "../../components/Modal";
 import Markdown from "../../components/Markdown";
 import DownloadButton from "../../components/DownloadButton";
 
@@ -64,7 +64,6 @@ export default function AdminChallenges() {
     queryKey: ["admin-waves"],
     queryFn: () => api.get<{ waves: ChallengeWave[] }>("/admin/waves"),
   });
-  const [editId, setEditId] = useState<number | "new" | null>(null);
   const [notice, setNotice] = useState("");
 
   const syncBoard = () => {
@@ -83,7 +82,6 @@ export default function AdminChallenges() {
     await api.del(`/admin/challenges/${id}`);
     syncBoard();
   };
-  const onSaved = syncBoard;
   const clone = async (id: number) => {
     await api.post(`/admin/challenges/${id}/clone`);
     flash("Draft clone created.");
@@ -108,7 +106,7 @@ export default function AdminChallenges() {
     <div>
       <div className="mb-6 flex items-center justify-between">
         <h1 className="text-2xl font-bold text-white">Challenges</h1>
-        <button className="btn-primary" onClick={() => setEditId("new")}>+ New challenge</button>
+        <Link className="btn-primary" to="/admin/challenges/new">+ New challenge</Link>
       </div>
       {notice && <div className="mb-4 rounded-md border border-slate-700 bg-slate-950/60 px-3 py-2 text-sm text-slate-300">{notice}</div>}
 
@@ -160,7 +158,7 @@ export default function AdminChallenges() {
                   <span className={`badge ${c.state === "visible" ? "border-emerald-700 text-emerald-400" : "border-amber-700 text-amber-400"}`}>{c.state}</span>
                 </td>
                 <td className="px-4 py-3 text-right whitespace-nowrap">
-                  <button className="btn-ghost text-xs mr-1" onClick={() => setEditId(c.id)}>Edit</button>
+                  <Link className="btn-ghost text-xs mr-1" to={`/admin/challenges/${c.id}/edit`}>Edit</Link>
                   {c.state === "visible" ? (
                     <button className="btn-ghost text-xs mr-1" onClick={() => hide(c.id)}>Hide</button>
                   ) : (
@@ -184,10 +182,21 @@ export default function AdminChallenges() {
           </tbody>
         </table>
       </div>
-
-      {editId != null && <Editor id={editId} onClose={() => setEditId(null)} onSaved={onSaved} />}
     </div>
   );
+}
+
+export function AdminChallengeCreate() {
+  return <Editor id="new" />;
+}
+
+export function AdminChallengeEdit() {
+  const { id } = useParams();
+  const challengeId = Number(id);
+  if (!Number.isFinite(challengeId) || challengeId <= 0) {
+    return <div className="card p-6 text-sm text-rose-300">Invalid challenge id.</div>;
+  }
+  return <Editor id={challengeId} />;
 }
 
 function WavesPanel({ waves, refetch, flash }: { waves: ChallengeWave[]; refetch: () => void; flash: (message: string) => void }) {
@@ -370,13 +379,17 @@ function parseChecklist(raw: any) {
 
 type Tab = "details" | "quality" | "flags" | "hints" | "files";
 
-function Editor({ id, onClose, onSaved }: { id: number | "new"; onClose: () => void; onSaved: () => void }) {
+function Editor({ id }: { id: number | "new" }) {
+  const location = useLocation();
+  const navigate = useNavigate();
+  const qc = useQueryClient();
+  const routeState = location.state as { tab?: Tab; toast?: string } | null;
   const isNew = id === "new";
   const [chId, setChId] = useState<number | null>(isNew ? null : (id as number));
   const [form, setForm] = useState<any>(EMPTY);
-  const [tab, setTab] = useState<Tab>("details");
+  const [tab, setTab] = useState<Tab>(routeState?.tab || "details");
   const [err, setErr] = useState("");
-  const [toast, setToast] = useState("");
+  const [toast, setToast] = useState(routeState?.toast || "");
   const [descPreview, setDescPreview] = useState(false);
   const set = (k: string) => (e: any) => setForm({ ...form, [k]: e.target.value });
 
@@ -404,6 +417,11 @@ function Editor({ id, onClose, onSaved }: { id: number | "new"; onClose: () => v
   };
 
   const flash = (m: string) => { setToast(m); setTimeout(() => setToast(""), 2500); };
+  const onSaved = () => {
+    qc.invalidateQueries({ queryKey: ["admin-challenges"] });
+    qc.invalidateQueries({ queryKey: ["admin-waves"] });
+    qc.invalidateQueries({ queryKey: ["challenges"] });
+  };
 
   const saveBase = async (makeVisible?: boolean) => {
     setErr("");
@@ -425,10 +443,12 @@ function Editor({ id, onClose, onSaved }: { id: number | "new"; onClose: () => v
     try {
       if (chId == null) {
         const r = await api.post<{ id: number }>("/admin/challenges", payload);
-        setChId(r.id);
-        setLoaded(true);
-        flash("Challenge created. Add a flag in the Flags tab.");
-        setTab("flags");
+        onSaved();
+        navigate(`/admin/challenges/${r.id}/edit`, {
+          replace: true,
+          state: { tab: "flags", toast: "Challenge created. Add a flag in the Flags tab." },
+        });
+        return;
       } else {
         await api.patch(`/admin/challenges/${chId}`, payload);
         if (makeVisible) {
@@ -479,36 +499,44 @@ function Editor({ id, onClose, onSaved }: { id: number | "new"; onClose: () => v
           Save & release
         </button>
       )}
-      <button className="btn-ghost ml-auto" onClick={onClose}>Close</button>
+      <button className="btn-ghost ml-auto" onClick={() => navigate("/admin/challenges")}>Back to list</button>
       {toast && <span className="text-sm text-sky-400">{toast}</span>}
     </div>
   );
 
   return (
-    <Modal open onClose={onClose} fullscreen title={isNew && chId == null ? "New challenge" : `Edit: ${form.name || "challenge"}`} footer={footer}>
-      {/* Status bar */}
-      {chId != null && (
-        <div className="mb-4 flex flex-wrap items-center gap-2 rounded-md border border-slate-800 bg-slate-950/50 px-3 py-2 text-xs">
-          <span className={`badge ${form.state === "visible" ? "border-emerald-700 text-emerald-400" : "border-amber-700 text-amber-400"}`}>{form.state}</span>
-          {selectedWave && <span className="badge border-sky-700 text-sky-300">{selectedWave.name}</span>}
-          {flagCount === 0
-            ? <span className="text-rose-400">No flags yet. Add one before release.</span>
-            : <span className="text-emerald-400">{flagCount} flag{flagCount > 1 ? "s" : ""} configured</span>}
+    <div className="flex min-h-[calc(100vh-8rem)] flex-col">
+      <div className="-mx-1 flex shrink-0 flex-wrap items-center gap-3 border-b border-[var(--border)] bg-[var(--bg)] px-1 py-3">
+        <div className="min-w-0 flex-1">
+          <div className="page-kicker">Challenges</div>
+          <h1 className="truncate text-2xl font-bold text-white">{isNew && chId == null ? "New challenge" : `Edit: ${form.name || "challenge"}`}</h1>
         </div>
-      )}
-
-      <div className="sticky top-0 z-10 mb-5 flex gap-1 overflow-x-auto border-b border-slate-800 bg-[var(--bg)] pt-1">
-        {tabBtn("details", "Details")}
-        {tabBtn("quality", "Quality")}
-        {tabBtn("flags", "Flags", flagCount === 0 ? "!" : `(${flagCount})`)}
-        {tabBtn("hints", "Hints", `(${detail.data?.hints?.length ?? 0})`)}
-        {tabBtn("files", "Files", `(${detail.data?.files?.length ?? 0})`)}
+        {chId != null && <span className={`badge ${form.state === "visible" ? "border-emerald-700 text-emerald-400" : "border-amber-700 text-amber-400"}`}>{form.state}</span>}
+        {selectedWave && <span className="badge border-sky-700 text-sky-300">{selectedWave.name}</span>}
+        <Link className="btn-ghost" to="/admin/challenges">Back</Link>
       </div>
 
-      {err && <div className="mb-3 rounded-md border border-rose-700 bg-rose-950/50 p-2 text-sm text-rose-300">{err}</div>}
+      <div className="flex-1 py-5">
+        {chId != null && (
+          <div className="mb-4 flex flex-wrap items-center gap-2 rounded-md border border-slate-800 bg-slate-950/50 px-3 py-2 text-xs">
+            {flagCount === 0
+              ? <span className="text-rose-400">No flags yet. Add one before release.</span>
+              : <span className="text-emerald-400">{flagCount} flag{flagCount > 1 ? "s" : ""} configured</span>}
+          </div>
+        )}
 
-      {tab === "details" && (
-        <div className="space-y-4">
+        <div className="mb-5 flex gap-1 overflow-x-auto border-b border-slate-800 bg-[var(--bg)] pt-1">
+          {tabBtn("details", "Details")}
+          {tabBtn("quality", "Quality")}
+          {tabBtn("flags", "Flags", flagCount === 0 ? "!" : `(${flagCount})`)}
+          {tabBtn("hints", "Hints", `(${detail.data?.hints?.length ?? 0})`)}
+          {tabBtn("files", "Files", `(${detail.data?.files?.length ?? 0})`)}
+        </div>
+
+        {err && <div className="mb-3 rounded-md border border-rose-700 bg-rose-950/50 p-2 text-sm text-rose-300">{err}</div>}
+
+        {tab === "details" && (
+          <div className="space-y-4">
           <div className="grid grid-cols-2 gap-4">
             <div><label className="label">Name</label><input className="input" value={form.name} onChange={set("name")} placeholder="e.g. Baby RSA" /></div>
             <div><label className="label">Category</label><input className="input" value={form.category} onChange={set("category")} placeholder="web / pwn / crypto / rev / forensics / misc" /></div>
@@ -604,27 +632,32 @@ function Editor({ id, onClose, onSaved }: { id: number | "new"; onClose: () => v
           </div>
 
           {chId == null && <p className="text-xs text-slate-500">After creating, you'll add flags, hints and files in the other tabs.</p>}
-        </div>
-      )}
+          </div>
+        )}
 
-      {tab === "quality" && (
-        <QualityTab
-          checklist={form.quality_checklist || EMPTY.quality_checklist}
-          setChecklist={(next) => setForm({ ...form, quality_checklist: next })}
-        />
-      )}
+        {tab === "quality" && (
+          <QualityTab
+            checklist={form.quality_checklist || EMPTY.quality_checklist}
+            setChecklist={(next) => setForm({ ...form, quality_checklist: next })}
+          />
+        )}
 
-      {tab === "flags" && chId != null && detail.data && (
-        <FlagsTab
-          chId={chId}
-          flags={detail.data.flags}
-          refetch={refetchDetail}
-          onLastFlagDeleted={() => setForm({ ...form, state: "hidden" })}
-        />
-      )}
-      {tab === "hints" && chId != null && detail.data && <HintsTab chId={chId} hints={detail.data.hints} refetch={refetchDetail} />}
-      {tab === "files" && chId != null && detail.data && <FilesTab chId={chId} files={detail.data.files} refetch={refetchDetail} />}
-    </Modal>
+        {tab === "flags" && chId != null && detail.data && (
+          <FlagsTab
+            chId={chId}
+            flags={detail.data.flags}
+            refetch={refetchDetail}
+            onLastFlagDeleted={() => setForm({ ...form, state: "hidden" })}
+          />
+        )}
+        {tab === "hints" && chId != null && detail.data && <HintsTab chId={chId} hints={detail.data.hints} refetch={refetchDetail} />}
+        {tab === "files" && chId != null && detail.data && <FilesTab chId={chId} files={detail.data.files} refetch={refetchDetail} />}
+      </div>
+
+      <div className="sticky bottom-0 z-20 -mx-1 border-t border-[var(--border)] bg-[var(--surface)] px-1 py-3">
+        {footer}
+      </div>
+    </div>
   );
 }
 
